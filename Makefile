@@ -8,7 +8,7 @@ LIBS = -lfplll -lgmp
 
 build:
 	@if [ ! -d $(OUTPUT_DIR) ]; then \
-		mkdir $(OUTPUT_DIR);         \
+		mkdir $(OUTPUT_DIR); \
 	fi
 	$(CXX) $(CXXFLAGS) -o $(OUTPUT_DIR)/$(NAME) src/$(NAME).cpp $(LIBS)
 
@@ -17,7 +17,7 @@ run: build
 
 clean:
 	@if [ ! -d $(OUTPUT_DIR) ]; then \
-		echo "No files to clean";    \
-	else                             \
-		rm -vr $(OUTPUT_DIR)/;       \
+		echo "No files to clean"; \
+	else \
+		rm -vr $(OUTPUT_DIR)/; \
 	fi

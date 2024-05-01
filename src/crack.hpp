@@ -5,22 +5,24 @@
 #include "fnv.hpp"
 #include "fplll.h"
 
+using namespace fplll;
+
 // for convenience only
 namespace preset {
-    static string valid = "0123456789abcdefghijklmnopqrstuvwxyz!\"#$%&'()*+,-./:;<=>?@[]^_`{|}~ ";
-    static string valid_func = "0123456789abcdefghijklmnopqrstuvwxyz_";
-    static string valid_file = "0123456789abcdefghijklmnopqrstuvwxyz_./";
-    static string valid_gsc = "0123456789abcdefghijklmnopqrstuvwxyz_./:";
+    static std::string valid = "0123456789abcdefghijklmnopqrstuvwxyz!\"#$%&'()*+,-./:;<=>?@[]^_`{|}~ ";
+    static std::string valid_func = "0123456789abcdefghijklmnopqrstuvwxyz_";
+    static std::string valid_file = "0123456789abcdefghijklmnopqrstuvwxyz_./";
+    static std::string valid_gsc = "0123456789abcdefghijklmnopqrstuvwxyz_./:";
 }
 
 template <uint64_t OFFSET_BASIS = 0xcbf29ce484222325, uint64_t PRIME = 0x100000001b3, uint32_t MOD_POW = 64>
 class CrackUtils {
     // just to make sure
     static_assert(MOD_POW <= 64, "The hard maximum on the MOD_POW value is 64");
-    
+
 private:
     bool charset_selected = false;
-    string valid = "";
+    std::string valid = "";
 
     inline Z_NR<mpz_t> pow(const Z_NR<mpz_t>& base, unsigned int exponent) {
         Z_NR<mpz_t> result;
@@ -28,15 +30,15 @@ private:
         return result;
     }
 
-    vector<string>& product(const string_view& chars, int repeat) {
-        static unordered_map<int, vector<string>> cache;
+    std::vector<std::string>& product(const std::string_view& chars, int repeat) {
+        static std::unordered_map<int, std::vector<std::string>> cache;
         
         auto it = cache.find(repeat);
         if (it != cache.end())
             return it->second;
         
-        vector<string> result;
-        function<void(int, string)> generate = [&](int depth, string current) {
+        std::vector<std::string> result;
+        function<void(int, std::string)> generate = [&](int depth, std::string current) {
             if (depth == 0) {
                 result.push_back(current);
                 return;
@@ -89,17 +91,17 @@ private:
         return make_tuple(gcd, x, x1);
     }
 public:
-    explicit CrackUtils(const char* charset) : charset_selected{ true }, valid{ string(charset) } {}
-    explicit CrackUtils(const string& charset) : charset_selected{ true }, valid{ charset } {}
+    explicit CrackUtils(const char* charset) : charset_selected{ true }, valid{ std::string(charset) } {}
+    explicit CrackUtils(const std::string& charset) : charset_selected{ true }, valid{ charset } {}
     explicit CrackUtils() : charset_selected{ true }, valid{ preset::valid } {}
     
     bool try_crack_single(
-        string& result,
+        std::string& result,
         const uint64_t target,
         const uint32_t expected_len,
         const uint32_t brute,
-        const string& prefix,
-        const string& suffix
+        const std::string& prefix,
+        const std::string& suffix
     ) {
         if (!this->charset_selected) {
             cout << "Never selected a valid charset!\n";
@@ -111,7 +113,7 @@ public:
         mpz_set_ui(p.get_data(), PRIME);
 
         // change according to whatever youre working with
-        const string valid_charset = this->valid;
+        const std::string valid_charset = this->valid;
 
         const uint32_t nn = expected_len - brute - prefix.size() - suffix.size();
         const uint32_t dim = nn + 2;
@@ -150,19 +152,19 @@ public:
             ntarget ^= suffix.at(i);
         }
 
-        string ret = "";
+        std::string ret = "";
         if constexpr (MOD_POW != 64) {
             ntarget %= 1ULL << MOD_POW;
         }
 
         // characters to use for brute forcing, the more you add the longer it'll take
-        const string_view brute_chars = "0123456789abcdefghijklmnopqrstuvwxyz_.";
+        const std::string_view brute_chars = "0123456789abcdefghijklmnopqrstuvwxyz_.";
 
         // setup fnv class
         using FNV = FNVUtil<OFFSET_BASIS, PRIME, MOD_POW>;
 
         for (const auto& br : this->product(brute_chars, brute)) {
-            const string new_prefix = prefix + br;
+            const std::string new_prefix = prefix + br;
             const uint64_t new_hash = FNV::hash(new_prefix);
 
             uint64_t m = new_hash * P - ntarget;
@@ -216,7 +218,7 @@ public:
                     int b = a;
                     a += cur;
                     uint32_t x = a ^ b;
-                    if (x >= 128 || valid_charset.find(x) == string::npos) {
+                    if (x >= 128 || valid_charset.find(x) == std::string::npos) {
                         success = false;
                         break;
                     }
