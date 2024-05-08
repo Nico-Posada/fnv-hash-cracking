@@ -2,9 +2,9 @@
 * Minimal header file to make working with the fnv hashing algorithm as easy and flexible as possible
 * 
 * Example Usages:
-*   using FNV_t = FNVUtil<>; // will result in OFFSET_BASIS = 0xcbf29ce484222325, PRIME = 0x100000001b3, MOD_POW = 64
-*   using FNV_t = FNVUtil<0x79D6530B0BB9B5D1>; // will result in OFFSET_BASIS = 0x79D6530B0BB9B5D1, PRIME = 0x100000001b3, MOD_POW = 64
-*   using FNV_t = FNVUtil<0x79D6530B0BB9B5D1, 0x10000000233>; // will result in OFFSET_BASIS = 0x79D6530B0BB9B5D1, PRIME = 0x10000000233, MOD_POW = 64
+*   using FNV_t = FNVUtil<>; // will result in OFFSET_BASIS = 0xcbf29ce484222325, PRIME = 0x100000001b3, BIT_LEN = 64
+*   using FNV_t = FNVUtil<0x79D6530B0BB9B5D1>; // will result in OFFSET_BASIS = 0x79D6530B0BB9B5D1, PRIME = 0x100000001b3, BIT_LEN = 64
+*   using FNV_t = FNVUtil<0x79D6530B0BB9B5D1, 0x10000000233>; // will result in OFFSET_BASIS = 0x79D6530B0BB9B5D1, PRIME = 0x10000000233, BIT_LEN = 64
 *
 *   // using the last FNV example
 *   uint64_t const_char_hashed = FNV_t::hash("test"); // => 0x81A14EF6F281AD49
@@ -17,10 +17,10 @@
 #include <cstdint>
 #include <string>
 
-template <uint64_t OFFSET_BASIS = 0xcbf29ce484222325, uint64_t PRIME = 0x100000001b3, uint32_t MOD_POW = 64>
+template <uint64_t OFFSET_BASIS = 0xcbf29ce484222325, uint64_t PRIME = 0x100000001b3, uint32_t BIT_LEN = 64>
 class FNVUtil {
     // just to make sure
-    static_assert(MOD_POW <= 64, "The hard maximum on the MOD_POW value is 64");
+    static_assert(BIT_LEN <= 64, "The maximum value of BIT_LEN is 64");
 
 public:
     static constexpr uint64_t hash(const char* string) {
@@ -37,8 +37,8 @@ public:
             hash *= prime;
         }
 
-        if constexpr (MOD_POW != 64) {
-            return hash % (1ULL << MOD_POW);
+        if constexpr (BIT_LEN != 64) {
+            return hash % (1ULL << BIT_LEN);
         } else {
             return hash;
         }
@@ -58,8 +58,8 @@ public:
             hash *= prime;
         }
 
-        if constexpr (MOD_POW != 64) {
-            return hash % (1ULL << MOD_POW);
+        if constexpr (BIT_LEN != 64) {
+            return hash % (1ULL << BIT_LEN);
         } else {
             return hash;
         }

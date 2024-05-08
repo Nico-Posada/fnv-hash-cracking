@@ -3,7 +3,7 @@
 fplll_download_link="https://github.com/fplll/fplll/releases/download/5.4.5/fplll-5.4.5.tar.gz"
 
 echo "Creating a temp directory to work in"
-if [ ! -d tmp ]; then mkdir temp; fi
+if [ ! -d temp ]; then mkdir temp; fi
 cd temp
 
 echo "Downloading fplll"

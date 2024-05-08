@@ -1,3 +1,12 @@
+/*
+*
+* This is just an old file I had for testing, it still has some code I want to port for multitheading
+* so it will not yet be deleted
+*
+*/
+
+
+/*
 #include "fplll.h"
 #include <iomanip>
 
@@ -9,8 +18,8 @@ constexpr uint64_t PRIME = 0x10000000233; // will crack 8 char plaintext with ar
 // constexpr uint64_t PRIME = 0x100000001B3; // will crack 8 char plaintext with around 93% accuracy
 
 // may occasionally change to 63
-constexpr uint32_t MOD_POW = 64;
-static_assert(MOD_POW <= 64, "The hard maximum on the MOD_POW value is 64");
+constexpr uint32_t BIT_LEN = 64;
+static_assert(BIT_LEN <= 64, "The hard maximum on the BIT_LEN value is 64");
 
 uint64_t fnv64(const char* string) {
     uint64_t hash = OFFSET_BASIS;
@@ -27,8 +36,8 @@ uint64_t fnv64(const char* string) {
         hash *= prime;
     }
 
-    if constexpr (MOD_POW != 64) {
-        return hash % (1ULL << MOD_POW);
+    if constexpr (BIT_LEN != 64) {
+        return hash % (1ULL << BIT_LEN);
     } else {
         return hash;
     }
@@ -49,8 +58,8 @@ uint64_t fnv64(const string& string) {
         hash *= prime;
     }
 
-    if constexpr (MOD_POW != 64) {
-        return hash % (1ULL << MOD_POW);
+    if constexpr (BIT_LEN != 64) {
+        return hash % (1ULL << BIT_LEN);
     } else {
         return hash;
     }
@@ -132,7 +141,7 @@ bool solve(
     const string& suffix = ""
 ) {
     Z_NR<mpz_t> MOD, p;
-    mpz_ui_pow_ui(MOD.get_data(), 2U, MOD_POW); // 2 ** MOD_POW
+    mpz_ui_pow_ui(MOD.get_data(), 2U, BIT_LEN); // 2 ** BIT_LEN
     mpz_set_ui(p.get_data(), PRIME);
 
     // change according to whatever youre working with
@@ -145,8 +154,8 @@ bool solve(
     for (int i = 0; i < nn; ++i)
         P *= PRIME;
     
-    if constexpr (MOD_POW != 64) {
-        P %= 1ULL << MOD_POW;
+    if constexpr (BIT_LEN != 64) {
+        P %= 1ULL << BIT_LEN;
     }
 
     Z_NR<mpz_t> start;
@@ -171,13 +180,13 @@ bool solve(
 
     uint64_t ntarget = target;
     for (int i = suffix.size() - 1; i >= 0; --i) {
-        ntarget *= inverse<PRIME, MOD_POW>();
+        ntarget *= inverse<PRIME, BIT_LEN>();
         ntarget ^= suffix.at(i);
     }
 
     string ret = "";
-    if constexpr (MOD_POW != 64) {
-        ntarget %= 1ULL << MOD_POW;
+    if constexpr (BIT_LEN != 64) {
+        ntarget %= 1ULL << BIT_LEN;
     }
 
     // characters to use for brute forcing, the more you add the longer it'll take
@@ -188,8 +197,8 @@ bool solve(
         const uint64_t new_hash = fnv64(new_prefix);
 
         uint64_t m = new_hash * P - ntarget;
-        if constexpr (MOD_POW != 64)
-            m %= 1ULL << MOD_POW;
+        if constexpr (BIT_LEN != 64)
+            m %= 1ULL << BIT_LEN;
 
         // create copy with (0, dim - 2) set
         ZZ_mat<mpz_t> M;
@@ -394,3 +403,4 @@ int main(int argc, char** argv, char** envp) {
 
     // return 0;
 }
+*/

@@ -2,34 +2,33 @@
 #include <cstdint>
 #include <string>
 #include <iomanip>
+
+#include "helpers.hpp"
 #include "fnv.hpp"
+#include "defs.hpp"
 #include "fplll.h"
 
 using namespace fplll;
 
 // for convenience only
-namespace preset {
+namespace presets {
     static std::string valid = "0123456789abcdefghijklmnopqrstuvwxyz!\"#$%&'()*+,-./:;<=>?@[]^_`{|}~ ";
     static std::string valid_func = "0123456789abcdefghijklmnopqrstuvwxyz_";
     static std::string valid_file = "0123456789abcdefghijklmnopqrstuvwxyz_./";
     static std::string valid_gsc = "0123456789abcdefghijklmnopqrstuvwxyz_./:";
 }
 
-template <uint64_t OFFSET_BASIS = 0xcbf29ce484222325, uint64_t PRIME = 0x100000001b3, uint32_t MOD_POW = 64>
+template <uint64_t OFFSET_BASIS = OFFSET_DEFAULT, uint64_t PRIME = PRIME_1b3, uint32_t BIT_LEN = 64>
 class CrackUtils {
     // just to make sure
-    static_assert(MOD_POW <= 64, "The hard maximum on the MOD_POW value is 64");
+    static_assert(BIT_LEN <= 64, "The maximum value of BIT_LEN is 64");
 
 private:
     bool charset_selected = false;
     std::string valid = "";
 
-    inline Z_NR<mpz_t> pow(const Z_NR<mpz_t>& base, unsigned int exponent) {
-        Z_NR<mpz_t> result;
-        mpz_pow_ui(result.get_data(), base.get_data(), exponent);
-        return result;
-    }
-
+    // generate a vector of all permutations of `chars` of length `repeat`
+    // uses caching to prevent it from generating this list multiple times
     std::vector<std::string>& product(const std::string_view& chars, int repeat) {
         static std::unordered_map<int, std::vector<std::string>> cache;
         
@@ -53,47 +52,10 @@ private:
         return cache[repeat];
     }
 
-    template <uint64_t prime, uint32_t exp>
-    uint64_t inverse() {
-        static once_flag flag{};
-        static uint64_t result;
-        call_once(flag, [&]() {
-            Z_NR<mpz_t> mpz_exp, mpz_prime, tmp;
-            mpz_ui_pow_ui(mpz_exp.get_data(), 2U, exp);
-            mpz_set_ui(mpz_prime.get_data(), prime);
-
-            auto ret = gcd_extended(mpz_prime, mpz_exp);
-            tmp.mod(std::get<1>(ret), mpz_exp);
-            result = mpz_get_ui(tmp.get_data());
-            if constexpr (exp != 64) {
-                result %= 1ULL << exp;
-            }
-        });
-
-        return result;
-    }
-
-    std::tuple<Z_NR<mpz_t>, Z_NR<mpz_t>, Z_NR<mpz_t>>
-    gcd_extended(Z_NR<mpz_t> a, Z_NR<mpz_t> b) {
-        if (a == 0) {
-            Z_NR<mpz_t> ra, rb;
-            mpz_set_ui(ra.get_data(), 0UL);
-            mpz_set_ui(rb.get_data(), 1UL);
-            return make_tuple(b, ra, rb);
-        }
-
-        Z_NR<mpz_t> tmp_b, x;
-        tmp_b.mod(b, a);
-        auto [gcd, x1, y1] = gcd_extended(tmp_b, a);
-        mpz_div(b.get_data(), b.get_data(), a.get_data());
-        b.mul(b, x1);
-        x.sub(y1, b);
-        return make_tuple(gcd, x, x1);
-    }
 public:
     explicit CrackUtils(const char* charset) : charset_selected{ true }, valid{ std::string(charset) } {}
     explicit CrackUtils(const std::string& charset) : charset_selected{ true }, valid{ charset } {}
-    explicit CrackUtils() : charset_selected{ true }, valid{ preset::valid } {}
+    explicit CrackUtils() : charset_selected{ true }, valid{ presets::valid } {}
     
     bool try_crack_single(
         std::string& result,
@@ -108,9 +70,8 @@ public:
             return false;
         }
 
-        Z_NR<mpz_t> MOD, p;
-        mpz_ui_pow_ui(MOD.get_data(), 2U, MOD_POW); // 2 ** MOD_POW
-        mpz_set_ui(p.get_data(), PRIME);
+        Z_NR<mpz_t> MOD;
+        mpz_ui_pow_ui(MOD.get_data(), 2U, BIT_LEN); // 2 ** BIT_LEN
 
         // change according to whatever youre working with
         const std::string valid_charset = this->valid;
@@ -119,11 +80,12 @@ public:
         const uint32_t dim = nn + 2;
 
         uint64_t P = 1;
-        for (int i = 0; i < nn; ++i)
+        for (int i = 0; i < nn; ++i) {
             P *= PRIME;
+        }
         
-        if constexpr (MOD_POW != 64) {
-            P %= 1ULL << MOD_POW;
+        if constexpr (BIT_LEN != 64) {
+            P %= 1ULL << BIT_LEN;
         }
 
         Z_NR<mpz_t> start;
@@ -142,34 +104,38 @@ public:
 
         // fill in extra column on the left
         // (except second to last val)
-        for (int i = 0; i < nn; ++i)
-            _M(i, 0) = this->pow(p, nn - i);
+        for (int i = 0; i < nn; ++i) {
+            mpz_ui_pow_ui(_M(i, 0).get_data(), PRIME, nn - i);
+        }
         _M(dim - 1, 0) = MOD;
 
+        // perform reverse of fnv algo to get hash without suffix applied
         uint64_t ntarget = target;
         for (int i = suffix.size() - 1; i >= 0; --i) {
-            ntarget *= this->inverse<PRIME, MOD_POW>();
+            ntarget *= InverseHelper<PRIME, BIT_LEN>::inverse();
             ntarget ^= suffix.at(i);
         }
 
         std::string ret = "";
-        if constexpr (MOD_POW != 64) {
-            ntarget %= 1ULL << MOD_POW;
+        if constexpr (BIT_LEN != 64) {
+            ntarget %= 1ULL << BIT_LEN;
         }
 
         // characters to use for brute forcing, the more you add the longer it'll take
         const std::string_view brute_chars = "0123456789abcdefghijklmnopqrstuvwxyz_.";
 
         // setup fnv class
-        using FNV = FNVUtil<OFFSET_BASIS, PRIME, MOD_POW>;
+        using FNV = FNVUtil<OFFSET_BASIS, PRIME, BIT_LEN>;
 
         for (const auto& br : this->product(brute_chars, brute)) {
+            // get the hash without the prefix applied
             const std::string new_prefix = prefix + br;
             const uint64_t new_hash = FNV::hash(new_prefix);
 
             uint64_t m = new_hash * P - ntarget;
-            if constexpr (MOD_POW != 64)
-                m %= 1ULL << MOD_POW;
+            if constexpr (BIT_LEN != 64) {
+                m %= 1ULL << BIT_LEN;
+            }
 
             // create copy with (0, dim - 2) set
             ZZ_mat<mpz_t> M;
@@ -232,6 +198,24 @@ public:
                     return true;
                 }
             }
+        }
+
+        return false;
+    }
+
+    bool brute_n(
+        string& result,
+        const uint64_t target,
+        const uint32_t max_search_len,
+        const string& prefix = "",
+        const string& suffix = ""
+    ) {
+        constexpr int MAX_CRACK_LEN = 8; // change depending on prime value
+        const size_t known_len = prefix.size() + suffix.size();
+        for (int n = 1 + known_len; n <= max_search_len + known_len; ++n) {
+            const uint32_t brute_len = n <= MAX_CRACK_LEN + known_len ? 0 : n - known_len - MAX_CRACK_LEN;
+            if (this->try_crack_single(result, target, n, brute_len, prefix, suffix))
+                return true;
         }
 
         return false;
