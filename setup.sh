@@ -6,10 +6,10 @@ function setup() {
         return 1
     fi
 
-    DOWNLOAD_URL="$1"
-    FILENAME="$2"
-    TMP_DIR="$3"
-    FILENAME_WITH_EXT="${DOWNLOAD_URL##*/}"
+    local DOWNLOAD_URL="$1"
+    local FILENAME="$2"
+    local TMP_DIR="$3"
+    local FILENAME_WITH_EXT="${DOWNLOAD_URL##*/}"
 
     echo "Creating a temp directory to work in"
     if [ ! -d "$TMP_DIR" ]; then mkdir "$TMP_DIR"; fi
