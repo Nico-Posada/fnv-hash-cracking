@@ -6,8 +6,9 @@ Huge thank you to [ConnorM](https://connor-mccartney.github.io) for his [incredi
 
 # Requirements
 This project requires the following libraries:<br/>
-    - [fplll](https://github.com/fplll/fplll)<br/>
+    - [mpfr](https://www.mpfr.org)<br/>
     - [gmp](https://gmplib.org)<br/>
+    - [fplll](https://github.com/fplll/fplll)<br/>
     
 NOTE: The fplll library which does *not* support Windows. If you are looking to use this on Windows, look into [WSL](https://learn.microsoft.com/en-us/windows/wsl/install).
 
@@ -16,7 +17,7 @@ Run the following commands to get started
 ```bash
 git clone https://github.com/Nico-Posada/fnv-hash-cracking.git
 cd fnv-hash-cracking
-sudo ./setup_fplll.sh # only if you do not have the library installed
+sudo ./setup.sh # only if you do not have the libraries installed
 ```
 
 To compile [the sample script](src/main.cpp), run the following

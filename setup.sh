@@ -1,0 +1,83 @@
+#!/bin/bash
+
+function setup() {
+    if [[ $# -ne 3 ]]; then
+        echo "setup must have 3 arguments"
+        return 1
+    fi
+
+    DOWNLOAD_URL="$1"
+    FILENAME="$2"
+    TMP_DIR="$3"
+    FILENAME_WITH_EXT="${DOWNLOAD_URL##*/}"
+
+    echo "Creating a temp directory to work in"
+    if [ ! -d "$TMP_DIR" ]; then mkdir "$TMP_DIR"; fi
+    cd "$TMP_DIR"
+
+    echo "Downloading $FILENAME"
+    if ! wget "$DOWNLOAD_URL" || [ ! -f "$FILENAME_WITH_EXT" ]; then
+        echo "Failed to download $FILENAME"
+        return 1
+    fi
+
+    echo "Extracting files"
+    if ! tar -xf "$FILENAME_WITH_EXT"; then
+        echo "Failed to extract $FILENAME"
+        return 1
+    fi
+
+    echo "Starting installation"
+    cd "$FILENAME"
+
+    if ! ./configure; then
+        echo "Failed to configure"
+        return 1
+    fi
+
+    if ! make; then
+        echo "Failed to make"
+        return 1
+    fi
+
+    if ! make check; then
+        echo "Failed the make check"
+        return 1
+    fi
+
+    if ! sudo make install; then
+        echo "Failed to make install"
+        exit 1
+    fi
+
+    echo "Finished! $FILENAME should now be installed as a library."
+    echo "Removing temp work directory"
+    cd ../..
+    rm -r "$TMP_DIR"
+    echo "Done!"
+    return 0
+}
+
+BASE_DIR="$PWD"
+TMP_DIR="tmp-mpfr"
+if ! setup "https://www.mpfr.org/mpfr-current/mpfr-4.2.1.tar.xz" "mpfr-4.2.1" "$TMP_DIR" && [[ -d "$TMP_DIR" ]]; then
+    rm -r "$TMP_DIR"
+    echo "Failed to install MPFR"
+    exit 1
+fi
+
+cd "$BASE_DIR"
+TMP_DIR="tmp-gmp"
+if ! setup "https://gmplib.org/download/gmp/gmp-6.3.0.tar.xz" "gmp-6.3.0" "$TMP_DIR" && [[ -d "$TMP_DIR" ]]; then
+    rm -r "$TMP_DIR"
+    echo "Failed to install GMP"
+    exit 1
+fi
+
+cd "$BASE_DIR"
+TMP_DIR="tmp-fplll"
+if ! setup "https://github.com/fplll/fplll/releases/download/5.4.5/fplll-5.4.5.tar.gz" "fplll-5.4.5" "$TMP_DIR" && [[ -d "$TMP_DIR" ]]; then
+    rm -r "$TMP_DIR"
+    echo "Failed to install fplll"
+    exit 1
+fi
