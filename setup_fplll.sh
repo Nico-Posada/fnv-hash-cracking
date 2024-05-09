@@ -9,18 +9,31 @@ cd temp
 echo "Downloading fplll"
 if ! wget "$fplll_download_link" || [ ! -f fplll-5.4.5.tar.gz ]; then
     echo "Failed to download fplll"
-    exit
+    exit 1
 fi
 
 echo "Extracting files"
 if ! tar -xf fplll-5.4.5.tar.gz; then
     echo "Failed to extract fplll"
-    exit
+    exit 1
 fi
 
 echo "Starting installation"
 cd fplll-5.4.5
-./configure && make && sudo make install
+if ! ./configure; then
+    echo "Failed to configure"
+    exit 1
+fi
+
+if ! make; then
+    echo "Failed to make"
+    exit 1
+fi
+
+if ! sudo make install; then
+    echo "Failed to make install"
+    exit 1
+fi
 
 echo "Finished! fplll should now be installed as a library."
 echo "Removing temp work directory"
