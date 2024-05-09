@@ -12,7 +12,7 @@ Run the following commands to get started
 ```bash
 git clone https://github.com/Nico-Posada/fnv-hash-cracking.git
 cd fnv-hash-cracking
-sudo ./setup_fplll # only if you do not have the library installed
+sudo ./setup_fplll.sh # only if you do not have the library installed
 ```
 
 To compile [the sample script](src/main.cpp), run the following
