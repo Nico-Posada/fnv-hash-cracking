@@ -47,7 +47,7 @@ function setup() {
 
     if ! sudo make install; then
         echo "Failed to make install"
-        exit 1
+        return 1
     fi
 
     echo "Finished! $FILENAME should now be installed as a library."
@@ -58,26 +58,19 @@ function setup() {
     return 0
 }
 
-BASE_DIR="$PWD"
-TMP_DIR="tmp-mpfr"
-if ! setup "https://www.mpfr.org/mpfr-current/mpfr-4.2.1.tar.xz" "mpfr-4.2.1" "$TMP_DIR" && [[ -d "$TMP_DIR" ]]; then
-    rm -r "$TMP_DIR"
-    echo "Failed to install MPFR"
+function fail_with_msg() {
+    echo "$1"
     exit 1
-fi
+}
 
-cd "$BASE_DIR"
-TMP_DIR="tmp-gmp"
-if ! setup "https://gmplib.org/download/gmp/gmp-6.3.0.tar.xz" "gmp-6.3.0" "$TMP_DIR" && [[ -d "$TMP_DIR" ]]; then
-    rm -r "$TMP_DIR"
-    echo "Failed to install GMP"
-    exit 1
-fi
+sudo apt-get update && \
+sudo apt-get upgrade -y && \
+sudo apt-get install -y build-essential libmpfr-dev libgmp-dev || fail_with_msg "Failed to install requirements"
 
-cd "$BASE_DIR"
 TMP_DIR="tmp-fplll"
-if ! setup "https://github.com/fplll/fplll/releases/download/5.4.5/fplll-5.4.5.tar.gz" "fplll-5.4.5" "$TMP_DIR" && [[ -d "$TMP_DIR" ]]; then
-    rm -r "$TMP_DIR"
-    echo "Failed to install fplll"
-    exit 1
+if ! setup "https://github.com/fplll/fplll/releases/download/5.4.5/fplll-5.4.5.tar.gz" "fplll-5.4.5" "$TMP_DIR"; then
+    [[ -d "$TMP_DIR" ]] && rm -r "$TMP_DIR"
+    fail_with_msg "Failed to install fplll"
 fi
+
+echo "Restart your shell to apply changes..."
