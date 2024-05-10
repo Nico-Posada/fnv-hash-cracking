@@ -65,7 +65,7 @@ function fail_with_msg() {
 
 sudo apt-get update && \
 sudo apt-get upgrade -y && \
-sudo apt-get install -y build-essential libmpfr-dev libgmp-dev || fail_with_msg "Failed to install requirements"
+sudo apt-get install -y build-essential libtool libgmp-dev libmpfr-dev pkg-config autoconf || fail_with_msg "Failed to install requirements"
 
 TMP_DIR="tmp-fplll"
 if ! setup "https://github.com/fplll/fplll/releases/download/5.4.5/fplll-5.4.5.tar.gz" "fplll-5.4.5" "$TMP_DIR"; then
