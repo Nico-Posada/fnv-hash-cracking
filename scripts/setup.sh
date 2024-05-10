@@ -72,5 +72,3 @@ if ! setup "https://github.com/fplll/fplll/releases/download/5.4.5/fplll-5.4.5.t
     [[ -d "$TMP_DIR" ]] && rm -r "$TMP_DIR"
     fail_with_msg "Failed to install fplll"
 fi
-
-echo "Restart your shell to apply changes..."
