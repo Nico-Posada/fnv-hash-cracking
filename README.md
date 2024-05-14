@@ -10,7 +10,7 @@ This project requires the following libraries:<br/>
     - [gmp](https://gmplib.org)<br/>
     - [fplll](https://github.com/fplll/fplll)<br/>
     
-NOTE: The fplll library which does *not* support Windows. If you are looking to use this on Windows, look into [WSL](https://learn.microsoft.com/en-us/windows/wsl/install).
+NOTE: This project uses the fplll library which does *not* support Windows. If you are looking to use this on Windows, look into [WSL](https://learn.microsoft.com/en-us/windows/wsl/install).
 
 # Usage
 Run the following commands to get started

@@ -61,9 +61,9 @@ public:
         std::string& result,
         const uint64_t target,
         const uint32_t expected_len,
-        const uint32_t brute,
-        const std::string& prefix,
-        const std::string& suffix
+        const uint32_t brute = 0,
+        const std::string& prefix = "",
+        const std::string& suffix = ""
     ) {
         if (!this->charset_selected) {
             cout << "Never selected a valid charset!\n";

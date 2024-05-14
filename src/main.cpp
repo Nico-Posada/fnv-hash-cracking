@@ -101,11 +101,57 @@ void example_3() {
     printf("\n");
 }
 
+// cracking hash and using a character list to help avoid returning weird collisions
+void example_4() {
+    printf("--- EXAMPLE 4 ---\n");
+
+    using FNV_t = FNVUtil<>;
+    using CrackUtils_t = CrackUtils<>;
+
+    // list of valid characters
+    string charset = "0123456789abcdef";
+
+    // you can also use some of the presets defined in crack.hpp
+    /*
+    namespace presets {
+        static std::string valid = "0123456789abcdefghijklmnopqrstuvwxyz!\"#$%&'()*+,-./:;<=>?@[]^_`{|}~ ";
+        static std::string valid_func = "0123456789abcdefghijklmnopqrstuvwxyz_";
+        static std::string valid_file = "0123456789abcdefghijklmnopqrstuvwxyz_./";
+        static std::string valid_gsc = "0123456789abcdefghijklmnopqrstuvwxyz_./:";
+    }
+
+    Ex: string charset = presets::valid_file;
+    */
+
+    // setup
+    auto crack = CrackUtils_t(charset);
+    string to_hash = "abc9784def";
+    uint64_t hashed = FNV_t::hash(to_hash);
+
+    // var to store cracked string if found
+    string result;
+
+    // max string length without needing to brute force is 8
+    // since the string we want to crack is of length 10, we need 2 chars of brute force
+    constexpr int BRUTE_CHARS = 2;
+    
+    // crack
+    printf("Trying to crack: 0x%016lX\n", hashed);
+    if (crack.try_crack_single(result, hashed, to_hash.size(), BRUTE_CHARS)) {
+        printf("Found! %s\n", result.c_str());
+    } else {
+        printf("Failed ):\n");
+    }
+
+    printf("\n");
+}
+
 // example usages
 int main() {
     example_1();
     example_2();
     example_3();
+    example_4();
 
     return 0;
 }
