@@ -30,7 +30,7 @@ function setup() {
     echo "Starting installation"
     cd "$FILENAME"
 
-    if ! ./configure; then
+    if ! ./configure CXXFLAGS="-march=native -O3 -Wall"; then
         echo "Failed to configure"
         return 1
     fi
@@ -68,7 +68,7 @@ sudo apt-get upgrade -y && \
 sudo apt-get install -y build-essential libtool libgmp-dev libmpfr-dev pkg-config autoconf || fail_with_msg "Failed to install requirements"
 
 TMP_DIR="tmp-fplll"
-if ! setup "https://github.com/fplll/fplll/releases/download/5.4.5/fplll-5.4.5.tar.gz" "fplll-5.4.5" "$TMP_DIR"; then
+if ! setup "https://github.com/fplll/fplll/releases/download/5.5.0/fplll-5.5.0.tar.gz" "fplll-5.5.0" "$TMP_DIR"; then
     [[ -d "$TMP_DIR" ]] && rm -r "$TMP_DIR"
     fail_with_msg "Failed to install fplll"
 fi

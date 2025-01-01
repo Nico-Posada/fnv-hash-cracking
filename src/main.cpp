@@ -1,10 +1,21 @@
 #include <iostream>
+#include <format>
 #include "crack.hpp"
+
+// convenience function since we're using c++20, not c++23 (which has std::print)
+template<typename... Args>
+void print(std::string_view fmt, Args&&... args) {
+    std::vformat_to(
+        std::ostreambuf_iterator<char>(std::cout),
+        fmt,
+        std::make_format_args(std::forward<Args>(args)...)
+    );
+}
 
 // using a known initial string just to test
 void example_1() {
-    printf("--- EXAMPLE 1 ---\n");
-    using FNV_t = FNVUtil<>;
+    print("--- EXAMPLE 1 ---\n");
+    using FNV_t = FNVUtilStatic<>;
     using CrackUtils_t = CrackUtils<>;
 
     // setup
@@ -24,19 +35,19 @@ void example_1() {
     const string known_suffix = ".exe";
     
     // crack
-    printf("Trying to crack: 0x%016lX\n", hashed);
+    print("Trying to crack: {:#x}\n", hashed);
     if (crack.try_crack_single(result, hashed, to_hash.size(), BRUTE_CHARS, known_prefix, known_suffix)) {
-        printf("Found! %s\n", result.c_str());
+        print("Found! {}\n", result);
     } else {
-        printf("Failed ):\n");
+        print("Failed ):\n");
     }
 
-    printf("\n");
+    print("\n");
 }
 
 // example of cracking hash without knowing what it is beforehand
 void example_2() {
-    printf("--- EXAMPLE 2 ---\n");
+    print("--- EXAMPLE 2 ---\n");
     using CrackUtils_t = CrackUtils<>;
 
     // setup
@@ -52,26 +63,26 @@ void example_2() {
     constexpr int MAX_LEN = 10;
 
     // crack
-    printf("Trying to crack: 0x%016lX\n", hashed);
+    print("Trying to crack: {:#x}\n", hashed);
 
     // note the use of brute_n, this just runs try_crack_single with lengths [1, MAX_LEN]
     if (crack.brute_n(result, hashed, MAX_LEN)) {
-        printf("Found! %s\n", result.c_str());
+        print("Found! {}\n", result);
     } else {
-        printf("Failed ):\n");
+        print("Failed ):\n");
     }
 
-    printf("\n");
+    print("\n");
 }
 
 // cracking hash that's truncated to 63 bits which uses a different offset basis and prime
 void example_3() {
-    printf("--- EXAMPLE 3 ---\n");
+    print("--- EXAMPLE 3 ---\n");
     constexpr uint64_t OFFSET_BASIS = 0xE4A68FF7D4912FD2;
     constexpr uint64_t PRIME = PRIME_233;
     constexpr uint32_t BIT_LEN = 63;
 
-    using FNV_t = FNVUtil<OFFSET_BASIS, PRIME, BIT_LEN>;
+    using FNV_t = FNVUtilStatic<OFFSET_BASIS, PRIME, BIT_LEN>;
     using CrackUtils_t = CrackUtils<OFFSET_BASIS, PRIME, BIT_LEN>;
 
     // setup (everything below is copied from the first example)
@@ -91,21 +102,21 @@ void example_3() {
     const string known_suffix = ".exe";
     
     // crack
-    printf("Trying to crack: 0x%016lX\n", hashed);
+    print("Trying to crack: {:#x}\n", hashed);
     if (crack.try_crack_single(result, hashed, to_hash.size(), BRUTE_CHARS, known_prefix, known_suffix)) {
-        printf("Found! %s\n", result.c_str());
+        print("Found! {}\n", result);
     } else {
-        printf("Failed ):\n");
+        print("Failed ):\n");
     }
 
-    printf("\n");
+    print("\n");
 }
 
 // cracking hash and using a character list to help avoid returning weird collisions
 void example_4() {
-    printf("--- EXAMPLE 4 ---\n");
+    print("--- EXAMPLE 4 ---\n");
 
-    using FNV_t = FNVUtil<>;
+    using FNV_t = FNVUtilStatic<>;
     using CrackUtils_t = CrackUtils<>;
 
     // list of valid characters
@@ -136,14 +147,14 @@ void example_4() {
     constexpr int BRUTE_CHARS = 2;
     
     // crack
-    printf("Trying to crack: 0x%016lX\n", hashed);
+    print("Trying to crack: {:#x}\n", hashed);
     if (crack.try_crack_single(result, hashed, to_hash.size(), BRUTE_CHARS)) {
-        printf("Found! %s\n", result.c_str());
+        print("Found! {}\n", result);
     } else {
-        printf("Failed ):\n");
+        print("Failed ):\n");
     }
 
-    printf("\n");
+    print("\n");
 }
 
 // example usages

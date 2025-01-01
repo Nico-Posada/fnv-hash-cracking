@@ -36,18 +36,25 @@ private:
         if (it != cache.end())
             return it->second;
         
+        uint32_t vec_length = 1;
+        for (int i = 0; i < repeat; ++i) {
+            vec_length *= chars.size();
+        }
+        
         std::vector<std::string> result;
-        function<void(int, std::string)> generate = [&](int depth, std::string current) {
+        result.reserve(vec_length);
+
+        function<void(int, std::string&&)> generate = [&](int depth, std::string&& current) {
             if (depth == 0) {
-                result.push_back(current);
+                result.emplace_back(current);
                 return;
             }
             
             for (const char c : chars)
-                generate(depth - 1, current + c);
+                generate(depth - 1, std::move(current + c));
         };
         
-        generate(repeat, "");
+        generate(repeat, std::move(std::string()));
         cache[repeat] = result;    
         return cache[repeat];
     }
@@ -74,18 +81,18 @@ public:
         mpz_ui_pow_ui(MOD.get_data(), 2U, BIT_LEN); // 2 ** BIT_LEN
 
         // change according to whatever youre working with
-        const std::string valid_charset = this->valid;
+        const std::string& valid_charset = this->valid;
 
         const uint32_t nn = expected_len - brute - prefix.size() - suffix.size();
         const uint32_t dim = nn + 2;
 
         uint64_t P = 1;
-        for (int i = 0; i < nn; ++i) {
+        for (uint32_t i = 0; i < nn; ++i) {
             P *= PRIME;
         }
         
         if constexpr (BIT_LEN != 64) {
-            P %= 1ULL << BIT_LEN;
+            P &= (1ULL << BIT_LEN) - 1;
         }
 
         Z_NR<mpz_t> start;
@@ -93,48 +100,52 @@ public:
 
         ZZ_mat<mpz_t> Q(dim, dim);
         Q(0, 0) = start;
-        for (int i = 1; i < dim - 1; ++i)
+        for (uint32_t i = 1; i < dim - 1; ++i)
             Q(i, i) = 1ULL << 4; // 2 ** 4
         Q(dim - 1, dim - 1) = 1ULL << 10; // 2 ** 10
 
         // identity matrix but with an extra column on the left and extra row on the bottom
         ZZ_mat<mpz_t> _M(dim, dim);
-        for (int i = 0; i <= nn; ++i)
+        for (uint32_t i = 0; i <= nn; ++i)
             _M(i, i+1) = 1;
 
         // fill in extra column on the left
         // (except second to last val)
-        for (int i = 0; i < nn; ++i) {
+        for (uint32_t i = 0; i < nn; ++i) {
             mpz_ui_pow_ui(_M(i, 0).get_data(), PRIME, nn - i);
         }
         _M(dim - 1, 0) = MOD;
 
         // perform reverse of fnv algo to get hash without suffix applied
         uint64_t ntarget = target;
-        for (int i = suffix.size() - 1; i >= 0; --i) {
-            ntarget *= InverseHelper<PRIME, BIT_LEN>::inverse();
-            ntarget ^= suffix.at(i);
+        if (!suffix.empty()) {
+            for (int32_t i = suffix.size() - 1; i >= 0; --i) {
+                ntarget *= InverseHelper<PRIME, BIT_LEN>::inverse();
+                ntarget ^= suffix.at(i);
+            }
         }
 
-        std::string ret = "";
+        std::string ret = std::string();
+        ret.reserve(0x10); // final crack length should never exceed this
+
         if constexpr (BIT_LEN != 64) {
-            ntarget %= 1ULL << BIT_LEN;
+            ntarget &= (1ULL << BIT_LEN) - 1;
         }
 
         // characters to use for brute forcing, the more you add the longer it'll take
         const std::string_view brute_chars = "0123456789abcdefghijklmnopqrstuvwxyz_.";
 
         // setup fnv class
-        using FNV = FNVUtil<OFFSET_BASIS, PRIME, BIT_LEN>;
+        using FNV = FNVUtil<BIT_LEN>;
+        const uint64_t prefixed_hash = FNV::hash(prefix, OFFSET_BASIS, PRIME);
 
         for (const auto& br : this->product(brute_chars, brute)) {
             // get the hash without the prefix applied
-            const std::string new_prefix = prefix + br;
-            const uint64_t new_hash = FNV::hash(new_prefix);
+            const uint64_t new_hash = FNV::hash(br, prefixed_hash, PRIME);
 
             uint64_t m = new_hash * P - ntarget;
             if constexpr (BIT_LEN != 64) {
-                m %= 1ULL << BIT_LEN;
+                m &= (1ULL << BIT_LEN) - 1;
             }
 
             // create copy with (0, dim - 2) set
@@ -143,9 +154,9 @@ public:
             M(dim - 2, 0) = m;
 
             // M *= Q
-            for (int x = 0; x < dim; ++x) {
-                auto& Q_val = Q(x, x).get_data();
-                for (int y = 0; y < dim; ++y) {
+            for (uint32_t x = 0; x < dim; ++x) {
+                const auto& Q_val = Q(x, x).get_data();
+                for (uint32_t y = 0; y < dim; ++y) {
                     auto& data = M(y, x).get_data();
                     mpz_mul(data, data, Q_val);
                 }
@@ -155,35 +166,34 @@ public:
             lll_reduction(M, LLL_DEF_DELTA, LLL_DEF_ETA, LM_HEURISTIC, FT_DOUBLE);
 
             // M /= Q
-            for (int x = 0; x < dim; ++x) {
-                auto& Q_val = Q(x, x).get_data();
-                for (int y = 0; y < dim; ++y) {
+            for (uint32_t x = 0; x < dim; ++x) {
+                const auto& Q_val = Q(x, x).get_data();
+                for (uint32_t y = 0; y < dim; ++y) {
                     auto& data = M(y, x).get_data();
                     mpz_div(data, data, Q_val);
                 }
             }
 
-            for (int i = 0; i < dim; ++i) {
+            for (uint32_t i = 0; i < dim; ++i) {
                 ret.clear();
-                MatrixRow<Z_NR<mpz_t>> row = M[i];
+                const MatrixRow<Z_NR<mpz_t>>& row = M[i];
 
-                int size = row.size();
-                int64_t row_last = mpz_get_si(row[size - 1].get_data());
+                const int32_t size = row.size();
+                const int64_t row_last = mpz_get_si(row[size - 1].get_data());
                 if (row_last != -1 && row_last != 1)
                     continue;
 
                 bool success = true;
-                int lo_hsh = new_hash & 0x7f;
-                int lo_p = PRIME & 0x7f;
-                int a = lo_hsh;
+                const int32_t lo_hsh = new_hash & 0x7f;
+                const int32_t lo_p = PRIME & 0x7f;
+                int32_t a = lo_hsh;
 
-                for (int j = 1; j < size - 1; ++j) {
-                    int64_t cur = mpz_get_si(row[j].get_data());
-                    cur *= row_last;
+                for (int32_t j = 1; j < size - 1; ++j) {
+                    const int64_t cur = mpz_get_si(row[j].get_data()) * row_last;
 
-                    int b = a;
+                    const int32_t b = a;
                     a += cur;
-                    uint32_t x = a ^ b;
+                    const uint32_t x = a ^ b;
                     if (x >= 128 || valid_charset.find(x) == std::string::npos) {
                         success = false;
                         break;
@@ -194,7 +204,7 @@ public:
                 }
 
                 if (success) {
-                    result = new_prefix + ret + suffix;
+                    result = prefix + br + ret + suffix;
                     return true;
                 }
             }
@@ -210,9 +220,9 @@ public:
         const string& prefix = "",
         const string& suffix = ""
     ) {
-        constexpr int MAX_CRACK_LEN = 8; // change depending on prime value
-        const size_t known_len = prefix.size() + suffix.size();
-        for (int n = 1 + known_len; n <= max_search_len + known_len; ++n) {
+        constexpr uint32_t MAX_CRACK_LEN = 8; // change depending on prime value
+        const uint32_t known_len = static_cast<uint32_t>(prefix.size() + suffix.size());
+        for (uint32_t n = 1 + known_len; n <= max_search_len + known_len; ++n) {
             const uint32_t brute_len = n <= MAX_CRACK_LEN + known_len ? 0 : n - known_len - MAX_CRACK_LEN;
             if (this->try_crack_single(result, target, n, brute_len, prefix, suffix))
                 return true;
