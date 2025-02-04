@@ -45,7 +45,7 @@ More information on compilation and installation specifics can be found in the [
 
 To compile [the test cases](src/main.cpp), run the following
 ```bash
-make build
+make test
 ```
 The binary will be output in the `build/` directory.
 
@@ -59,5 +59,5 @@ To use in your own program, just copy over the `src` directory to your project d
 # TODO
 - fplll has docker containers. Figure out how to make this work in them and provide steps.
 - Clean up code, add more tests and actual test outputs.
-- Add multithreading
+- Add multithreading support back in.
 - Maybe add a python module for this?
