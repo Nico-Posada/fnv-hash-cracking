@@ -25,6 +25,12 @@ If you do not have the fplll library installed, run the following:
 sudo apt install fplll-tools
 ```
 
+or if you want to build it from source (will probably be better optimized for your machine), run the following
+```bash
+chmod +x scripts/setup.sh
+sudo scripts/setup.sh
+```
+
 ## Conda
 ```bash
 conda install fplll
@@ -33,12 +39,6 @@ conda install fplll
 ## MacOS
 ```bash
 brew install fplll
-```
-
-or if you want to build it from source (will probably be better optimized for your machine), run the following
-```bash
-chmod +x scripts/setup.sh
-sudo scripts/setup.sh
 ```
 
 More information on compilation and installation specifics can be found in the [fplll repository](https://github.com/fplll/fplll?tab=readme-ov-file#compilation).
