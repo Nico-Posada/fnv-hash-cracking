@@ -19,19 +19,45 @@ git clone https://github.com/Nico-Posada/fnv-hash-cracking.git
 cd fnv-hash-cracking
 ```
 
-If you do not have the fplll library installed, run the following
+If you do not have the fplll library installed, run the following:
+## Ubuntu and Debian
+```bash
+sudo apt install fplll-tools
+```
+
+## Conda
+```bash
+conda install fplll
+```
+
+## MacOS
+```bash
+brew install fplll
+```
+
+or if you want to build it from source (will probably be better optimized for your machine), run the following
 ```bash
 chmod +x scripts/setup.sh
 sudo scripts/setup.sh
 ```
 
-To compile [the sample script](src/main.cpp), run the following
+More information on compilation and installation specifics can be found in the [fplll repository](https://github.com/fplll/fplll?tab=readme-ov-file#compilation).
+
+To compile [the test cases](src/main.cpp), run the following
 ```bash
 make build
 ```
 The binary will be output in the `build/` directory.
 
-To compile and run the sample script, run the following 
+To compile and run the test script, run the following 
 ```bash
 make run
 ```
+
+To use in your own program, just copy over the `src` directory to your project directory and you can include it in your build script as normal. This uses header files only, so no need to make any object files beforehand.
+
+# TODO
+- fplll has docker containers. Figure out how to make this work in them and provide steps.
+- Clean up code, add more tests and actual test outputs.
+- Add multithreading
+- Maybe add a python module for this?

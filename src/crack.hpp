@@ -27,8 +27,13 @@ private:
     bool charset_selected = false;
     std::string valid = "";
 
+    // characters to use for brute forcing, the more you add the longer it'll take.
+    // this is just the default list, can be changed with `set_bruting_charset`
+    std::string_view bruting_chars = "0123456789abcdefghijklmnopqrstuvwxyz_.";
+
     // generate a vector of all permutations of `chars` of length `repeat`
     // uses caching to prevent it from generating this list multiple times
+    // TODO make thread safe to prevent it from generating redundant lists
     std::vector<std::string>& product(const std::string_view& chars, int repeat) {
         static std::unordered_map<int, std::vector<std::string>> cache;
         
@@ -63,6 +68,10 @@ public:
     explicit CrackUtils(const char* charset) : charset_selected{ true }, valid{ std::string(charset) } {}
     explicit CrackUtils(const std::string& charset) : charset_selected{ true }, valid{ charset } {}
     explicit CrackUtils() : charset_selected{ true }, valid{ presets::valid } {}
+
+    void set_bruting_charset(const std::string& chars) {
+        this->bruting_chars = chars;
+    }
     
     bool try_crack_single(
         std::string& result,
@@ -132,14 +141,11 @@ public:
             ntarget &= (1ULL << BIT_LEN) - 1;
         }
 
-        // characters to use for brute forcing, the more you add the longer it'll take
-        const std::string_view brute_chars = "0123456789abcdefghijklmnopqrstuvwxyz_.";
-
         // setup fnv class
         using FNV = FNVUtil<BIT_LEN>;
         const uint64_t prefixed_hash = FNV::hash(prefix, OFFSET_BASIS, PRIME);
 
-        for (const auto& br : this->product(brute_chars, brute)) {
+        for (const auto& br : this->product(this->bruting_chars, brute)) {
             // get the hash without the prefix applied
             const uint64_t new_hash = FNV::hash(br, prefixed_hash, PRIME);
 
@@ -175,13 +181,14 @@ public:
             }
 
             for (uint32_t i = 0; i < dim; ++i) {
-                ret.clear();
                 const MatrixRow<Z_NR<mpz_t>>& row = M[i];
 
                 const int32_t size = row.size();
                 const int64_t row_last = mpz_get_si(row[size - 1].get_data());
                 if (row_last != -1 && row_last != 1)
                     continue;
+
+                ret.clear();
 
                 bool success = true;
                 const int32_t lo_hsh = new_hash & 0x7f;

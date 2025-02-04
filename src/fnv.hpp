@@ -1,10 +1,12 @@
 /*
 * Minimal header file to make working with the fnv hashing algorithm as easy and flexible as possible
+* NOTE: These hashing functions will convert all text to lowercase and convert all \ to / as this was originally made
+* for Call of Duty hashes. If you want to support all characters, remove any parts that do `cur |= 0x20` or `cur = '/'` 
 * 
 * Example Usages:
-*   using FNV_t = FNVUtil<>; // will result in OFFSET_BASIS = 0xcbf29ce484222325, PRIME = 0x100000001b3, BIT_LEN = 64
-*   using FNV_t = FNVUtil<0x79D6530B0BB9B5D1>; // will result in OFFSET_BASIS = 0x79D6530B0BB9B5D1, PRIME = 0x100000001b3, BIT_LEN = 64
-*   using FNV_t = FNVUtil<0x79D6530B0BB9B5D1, 0x10000000233>; // will result in OFFSET_BASIS = 0x79D6530B0BB9B5D1, PRIME = 0x10000000233, BIT_LEN = 64
+*   using FNV_t = FNVUtilStatic<>; // will result in OFFSET_BASIS = 0xcbf29ce484222325, PRIME = 0x100000001b3, BIT_LEN = 64
+*   using FNV_t = FNVUtilStatic<0x79D6530B0BB9B5D1>; // will result in OFFSET_BASIS = 0x79D6530B0BB9B5D1, PRIME = 0x100000001b3, BIT_LEN = 64
+*   using FNV_t = FNVUtilStatic<0x79D6530B0BB9B5D1, 0x10000000233>; // will result in OFFSET_BASIS = 0x79D6530B0BB9B5D1, PRIME = 0x10000000233, BIT_LEN = 64
 *
 *   // using the last FNV example
 *   uint64_t const_char_hashed = FNV_t::hash("test"); // => 0x81A14EF6F281AD49
@@ -59,7 +61,7 @@ public:
         }
 
         if constexpr (BIT_LEN != 64) {
-            return hash  & ((1ULL << BIT_LEN) - 1);
+            return hash & ((1ULL << BIT_LEN) - 1);
         } else {
             return hash;
         }
