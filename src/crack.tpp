@@ -1,7 +1,7 @@
 #pragma once
 
 template <uint64_t OFFSET_BASIS, uint64_t PRIME, uint32_t BIT_LEN>
-bool CrackUtils<OFFSET_BASIS, PRIME, BIT_LEN>::try_crack_single(
+CrackStatus CrackUtils<OFFSET_BASIS, PRIME, BIT_LEN>::try_crack_single(
     std::string& result,
     const uint64_t target,
     const uint32_t expected_len,
@@ -12,13 +12,13 @@ bool CrackUtils<OFFSET_BASIS, PRIME, BIT_LEN>::try_crack_single(
     if (this->valid_chars.empty()) {
         // TODO have a different return value for this so it can terminate earlier in brute_n
         cerr << "Never selected a charset of valid characters!\n";
-        return false;
+        return CrackStatus::MISSING_CHARSET;
     }
 
     if (this->bruting_chars.empty()) {
         // TODO have a different return value for this so it can terminate earlier in brute_n
         cerr << "Never selected a charset of bruting characters!\n";
-        return false;
+        return CrackStatus::MISSING_CHARSET;
     }
 
     Z_NR<mpz_t> MOD;
@@ -153,7 +153,7 @@ bool CrackUtils<OFFSET_BASIS, PRIME, BIT_LEN>::try_crack_single(
                 if (hashed_result == target)
                 {
                     result = possible_result;
-                    return true;
+                    return CrackStatus::HASH_CRACKED;
                 }
 
                 cerr << std::format("Got a false positive '{}' ({:#x} vs {:#x})\n", possible_result, hashed_result, target);
@@ -161,11 +161,11 @@ bool CrackUtils<OFFSET_BASIS, PRIME, BIT_LEN>::try_crack_single(
         }
     }
 
-    return false;
+    return CrackStatus::HASH_NOT_CRACKED;
 }
 
 template <uint64_t OFFSET_BASIS, uint64_t PRIME, uint32_t BIT_LEN>
-bool CrackUtils<OFFSET_BASIS, PRIME, BIT_LEN>::brute_n(
+CrackStatus CrackUtils<OFFSET_BASIS, PRIME, BIT_LEN>::brute_n(
     string& result,
     const uint64_t target,
     const uint32_t max_search_len,
@@ -182,9 +182,12 @@ bool CrackUtils<OFFSET_BASIS, PRIME, BIT_LEN>::brute_n(
     const uint32_t known_len = static_cast<uint32_t>(prefix.size() + suffix.size());
     for (uint32_t n = 1 + known_len; n <= max_search_len + known_len; ++n) {
         const uint32_t brute_len = n <= MAX_CRACK_LEN + known_len ? 0 : n - known_len - MAX_CRACK_LEN;
-        if (this->try_crack_single(result, target, n, brute_len, prefix, suffix))
-            return true;
+        CrackStatus ret = this->try_crack_single(result, target, n, brute_len, prefix, suffix);
+        if (ret == CrackStatus::HASH_NOT_CRACKED)
+            continue;
+
+        return ret;
     }
 
-    return false;
+    return CrackStatus::HASH_NOT_CRACKED;
 }

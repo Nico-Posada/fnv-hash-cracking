@@ -63,3 +63,4 @@ To use in your own program, just copy over the `src` directory to your project d
 - Maybe add a python module for this?
 - Add support for setting the hash/prime/bit len dynamically to make this into a proper CLI
     * If this happens, maybe add JIT compilation for some speedup?
+- Benchmarks

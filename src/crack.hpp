@@ -19,6 +19,12 @@ namespace presets {
     static std::string ident = "abcdefghijklmnopqrstuvwxyz0123456789_";
 }
 
+enum CrackStatus {
+    HASH_CRACKED,
+    HASH_NOT_CRACKED,
+    MISSING_CHARSET
+};
+
 template <uint64_t OFFSET_BASIS = OFFSET_DEFAULT, uint64_t PRIME = PRIME_1b3, uint32_t BIT_LEN = 64>
 class CrackUtils {
     // just to make sure
@@ -75,7 +81,6 @@ public:
     explicit CrackUtils() : valid_chars{ presets::printable } {}
 
     void set_bruting_charset(const std::string& chars) {
-        cout << "in copy\n";
         this->bruting_chars = chars;
         this->cache.clear();
     }
@@ -85,7 +90,7 @@ public:
         this->cache.clear();
     }
     
-    bool try_crack_single(
+    CrackStatus try_crack_single(
         std::string& result,
         const uint64_t target,
         const uint32_t expected_len,
@@ -94,7 +99,7 @@ public:
         const std::string& suffix = ""
     );
 
-    bool brute_n(
+    CrackStatus brute_n(
         string& result,
         const uint64_t target,
         const uint32_t max_search_len,

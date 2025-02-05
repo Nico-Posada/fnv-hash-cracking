@@ -1,5 +1,6 @@
 #include <iostream>
 #include <format>
+#include <chrono>
 
 #if !defined(__cplusplus)
 #   error "Why isnt __cplusplus defined"
@@ -52,7 +53,7 @@ bool example_1() {
     
     // crack
     print("Trying to crack: {:#x}\n", hashed);
-    if (crack.try_crack_single(result, hashed, to_hash.size(), BRUTE_CHARS, known_prefix, known_suffix)) {
+    if (crack.try_crack_single(result, hashed, to_hash.size(), BRUTE_CHARS, known_prefix, known_suffix) == HASH_CRACKED) {
         print("Found! {}\n", result);
     } else {
         print("Failed ):\n");
@@ -82,7 +83,7 @@ bool example_2() {
     print("Trying to crack: {:#x}\n", hashed);
 
     // note the use of brute_n, this just runs try_crack_single with lengths [1, MAX_LEN]
-    if (crack.brute_n(result, hashed, MAX_LEN)) {
+    if (crack.brute_n(result, hashed, MAX_LEN) == HASH_CRACKED) {
         print("Found! {}\n", result);
     } else {
         print("Failed ):\n");
@@ -119,7 +120,7 @@ bool example_3() {
     
     // crack
     print("Trying to crack: {:#x}\n", hashed);
-    if (crack.try_crack_single(result, hashed, to_hash.size(), BRUTE_CHARS, known_prefix, known_suffix)) {
+    if (crack.try_crack_single(result, hashed, to_hash.size(), BRUTE_CHARS, known_prefix, known_suffix) == HASH_CRACKED) {
         print("Found! {}\n", result);
     } else {
         print("Failed ):\n");
@@ -169,7 +170,7 @@ bool example_4() {
     
     // crack
     print("Trying to crack: {:#x}\n", hashed);
-    if (crack.try_crack_single(result, hashed, to_hash.size(), BRUTE_CHARS)) {
+    if (crack.try_crack_single(result, hashed, to_hash.size(), BRUTE_CHARS) == HASH_CRACKED) {
         print("Found! {}\n", result);
     } else {
         print("Failed ):\n");
@@ -187,7 +188,7 @@ bool example_4() {
 #define END_TEST_CASES() };
 
 #define TEST(func_name) \
-    { #func_name, []() -> bool {
+    { #func_name, []() -> bool { print("Running {}\n", #func_name);
 #define END_TEST() }},
 
 START_TEST_CASES(test_cases)
@@ -204,14 +205,14 @@ TEST(test_changing_brute_charset)
 
     string result;
 
-    if (crack.brute_n(result, hashed, 9))
+    if (crack.brute_n(result, hashed, 9) == HASH_CRACKED)
     {
         print("Found result '{}' when it should have found none!\n", result);
         return false;
     }
 
     crack.set_bruting_charset(presets::alpha);
-    if (crack.brute_n(result, hashed, 9))
+    if (crack.brute_n(result, hashed, 9) == HASH_CRACKED)
     {
         bool ret = result == to_hash;
         if (!ret) {
@@ -236,7 +237,64 @@ TEST(test_different_offset_basis)
     crack.set_bruting_charset(presets::alpha + "!");
 
     string result;
-    if (!crack.brute_n(result, hashed, 10))
+    if (crack.brute_n(result, hashed, 10) != HASH_CRACKED)
+    {
+        print("Failed to find hash when given different offset basis!\n");
+        return false;
+    }
+
+    if (result != to_hash)
+    {
+        print("Found result '{}', but wasn't expected result! {:#x} vs {:#x}\n", result, FNV_t::hash(result), hashed);
+        return false;
+    }
+
+    return true;
+END_TEST()
+
+TEST(test_different_prime)
+    constexpr uint64_t OFFSET = 0xdeadbeef;
+    constexpr uint64_t PRIME = PRIME_233;
+    using CrackUtils_t = CrackUtils<OFFSET, PRIME>;
+    using FNV_t = FNVUtilStatic<OFFSET, PRIME>;
+
+    string to_hash = "crackme123";
+    uint64_t hashed = FNV_t::hash(to_hash);
+
+    CrackUtils_t crack = CrackUtils_t(presets::alphanum);
+    crack.set_bruting_charset(presets::alphanum);
+
+    string result;
+    if (crack.brute_n(result, hashed, 10) != HASH_CRACKED)
+    {
+        print("Failed to find hash when given different offset basis!\n");
+        return false;
+    }
+
+    if (result != to_hash)
+    {
+        print("Found result '{}', but wasn't expected result! {:#x} vs {:#x}\n", result, FNV_t::hash(result), hashed);
+        return false;
+    }
+
+    return true;
+END_TEST()
+
+TEST(test_different_bit_len)
+    constexpr uint64_t OFFSET = 0xdeadbeef;
+    constexpr uint64_t PRIME = PRIME_233;
+    constexpr uint32_t BIT_LEN = 63;
+    using CrackUtils_t = CrackUtils<OFFSET, PRIME, BIT_LEN>;
+    using FNV_t = FNVUtilStatic<OFFSET, PRIME, BIT_LEN>;
+
+    string to_hash = "woahwoah12";
+    uint64_t hashed = FNV_t::hash(to_hash);
+
+    CrackUtils_t crack = CrackUtils_t(presets::alphanum);
+    crack.set_bruting_charset(presets::alphanum);
+
+    string result;
+    if (crack.brute_n(result, hashed, 10) != HASH_CRACKED)
     {
         print("Failed to find hash when given different offset basis!\n");
         return false;
@@ -259,8 +317,9 @@ int main() {
     uint32_t passed_cases = 0;
     vector<string> failed_cases{};
 
+    auto test_start_time = std::chrono::system_clock::now();
+
     for (const auto& [func_name, test_case] : test_cases) {
-        print("Running {}\n", func_name);
         if (test_case()) {
             passed_cases++;
             print("Success!\n");
@@ -269,8 +328,15 @@ int main() {
         }
     }
 
-    print("\nTEST RESULTS\nTotal Tests: {}\nPassed: {}\nFailed: {}\n",
-          total_cases, passed_cases, failed_cases.size());
+    auto test_end_time = std::chrono::system_clock::now();
+
+    print("\nTEST RESULTS\n"
+          "Total Tests: {}\n"
+          "Passed: {}\n"
+          "Failed: {}\n"
+          "Time Taken: {:.3f}s\n",
+          total_cases, passed_cases, failed_cases.size(),
+          std::chrono::duration_cast<std::chrono::milliseconds>(test_end_time - test_start_time).count() / 1000.0);
     
     if (!failed_cases.empty()) {
         print("\nFailed test cases:\n");
