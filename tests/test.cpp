@@ -136,16 +136,16 @@ bool example_4() {
     using CrackUtils_t = CrackUtils<>;
 
     // list of valid characters
-    string charset = "0123456789abcdef";
+    string charset = "!?0123456789abcdef";
 
     // you can also use some of the presets defined in crack.hpp
     /*
     namespace presets {
-        static std::string valid = "0123456789abcdefghijklmnopqrstuvwxyz!\"#$%&'()*+,-./:;<=>?@[]^_`{|}~ ";
-        static std::string valid_func = "0123456789abcdefghijklmnopqrstuvwxyz_";
-        static std::string valid_file = "0123456789abcdefghijklmnopqrstuvwxyz_./";
-        static std::string valid_gsc = "0123456789abcdefghijklmnopqrstuvwxyz_./:";
-        static std::string valid_hex = "0123456789abcdef";
+        static std::string printable = " !\"#$%&'()*+,-./0123456789:;<=>?@[]^_`abcdefghijklmnopqrstuvwxyz{|}~";
+        static std::string alpha = "abcdefghijklmnopqrstuvwxyz";
+        static std::string alphanum = "abcdefghijklmnopqrstuvwxyz0123456789";
+        static std::string hex = "0123456789abcdef";
+        static std::string ident = "abcdefghijklmnopqrstuvwxyz0123456789_"
     }
 
     Ex: string charset = presets::valid_file;
@@ -157,7 +157,7 @@ bool example_4() {
     // you can set the characters using in the brute force section too
     crack.set_bruting_charset(charset);
 
-    string to_hash = "abc9784def";
+    string to_hash = "abc9784de!";
     uint64_t hashed = FNV_t::hash(to_hash);
 
     // var to store cracked string if found
@@ -183,11 +183,16 @@ bool example_4() {
 /* ======================================= */
 // these wont be commented like the example cases above
 
-#define PRINT_TEST() print("Running {}\n", __FUNCTION__)
+#define START_TEST_CASES(name) static vector<pair<string, function<bool()>>> name = {
+#define END_TEST_CASES() };
 
-bool test_changing_brute_charset() {
-    PRINT_TEST();
+#define TEST(func_name) \
+    { #func_name, []() -> bool {
+#define END_TEST() }},
 
+START_TEST_CASES(test_cases)
+
+TEST(test_changing_brute_charset)
     using FNV_t = FNVUtilStatic<>;
     using CrackUtils_t = CrackUtils<>;
 
@@ -201,12 +206,11 @@ bool test_changing_brute_charset() {
 
     if (crack.brute_n(result, hashed, 9))
     {
-        // it should not have found it with the given bruting charset
         print("Found result '{}' when it should have found none!\n", result);
         return false;
     }
 
-    crack.set_bruting_charset(presets::valid);
+    crack.set_bruting_charset(presets::alpha);
     if (crack.brute_n(result, hashed, 9))
     {
         bool ret = result == to_hash;
@@ -218,17 +222,36 @@ bool test_changing_brute_charset() {
 
     print("Found no result after setting bruting charset!\n");
     return false;
-}
+END_TEST()
 
-#define X(func) { func, #func }
-vector<pair<bool(*)(), string>> test_cases = {
-    X(example_1),
-    X(example_2),
-    X(example_3),
-    X(example_4),
-    X(test_changing_brute_charset)
-};
-#undef X
+TEST(test_different_offset_basis)
+    constexpr uint64_t OFFSET = 0xdeadbeef;
+    using CrackUtils_t = CrackUtils<OFFSET>;
+    using FNV_t = FNVUtilStatic<OFFSET>;
+
+    string to_hash = "plswork!!!";
+    uint64_t hashed = FNV_t::hash(to_hash);
+
+    CrackUtils_t crack = CrackUtils_t(presets::alpha + "!");
+    crack.set_bruting_charset(presets::alpha + "!");
+
+    string result;
+    if (!crack.brute_n(result, hashed, 10))
+    {
+        print("Failed to find hash when given different offset basis!\n");
+        return false;
+    }
+
+    if (result != to_hash)
+    {
+        print("Found result '{}', but wasn't expected result! {:#x} vs {:#x}\n", result, FNV_t::hash(result), hashed);
+        return false;
+    }
+
+    return true;
+END_TEST()
+
+END_TEST_CASES()
 
 // run tests/examples
 int main() {
@@ -236,7 +259,8 @@ int main() {
     uint32_t passed_cases = 0;
     vector<string> failed_cases{};
 
-    for (const auto& [test_case, func_name] : test_cases) {
+    for (const auto& [func_name, test_case] : test_cases) {
+        print("Running {}\n", func_name);
         if (test_case()) {
             passed_cases++;
             print("Success!\n");

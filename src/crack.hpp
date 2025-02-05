@@ -12,11 +12,11 @@ using namespace fplll;
 
 // for convenience only
 namespace presets {
-    static std::string valid = "0123456789abcdefghijklmnopqrstuvwxyz!\"#$%&'()*+,-./:;<=>?@[]^_`{|}~ ";
-    static std::string valid_func = "0123456789abcdefghijklmnopqrstuvwxyz_";
-    static std::string valid_file = "0123456789abcdefghijklmnopqrstuvwxyz_./";
-    static std::string valid_gsc = "0123456789abcdefghijklmnopqrstuvwxyz_./:";
-    static std::string valid_hex = "0123456789abcdef";
+    static std::string printable = " !\"#$%&'()*+,-./0123456789:;<=>?@[]^_`abcdefghijklmnopqrstuvwxyz{|}~";
+    static std::string alpha = "abcdefghijklmnopqrstuvwxyz";
+    static std::string alphanum = "abcdefghijklmnopqrstuvwxyz0123456789";
+    static std::string hex = "0123456789abcdef";
+    static std::string ident = "abcdefghijklmnopqrstuvwxyz0123456789_";
 }
 
 template <uint64_t OFFSET_BASIS = OFFSET_DEFAULT, uint64_t PRIME = PRIME_1b3, uint32_t BIT_LEN = 64>
@@ -25,12 +25,14 @@ class CrackUtils {
     static_assert(BIT_LEN <= 64, "The maximum value of BIT_LEN is 64");
 
 private:
-    bool charset_selected = false;
-    std::string valid = "";
+    // list of characters which you know are valid for the hash you're trying to crack.
+    // for example, if you're trying to crack a hex string, you know the final result will only
+    // consist of chars 0-9a-f, so if we get a collision, we can properly skip it
+    std::string valid_chars = "";
 
     // characters to use for brute forcing, the more you add the longer it'll take.
     // this is just the default list, can be changed with `set_bruting_charset`
-    std::string_view bruting_chars = "0123456789abcdefghijklmnopqrstuvwxyz_.";
+    std::string bruting_chars = "0123456789abcdefghijklmnopqrstuvwxyz_.";
 
     // cache of character combinations for the brute force
     // TODO: use normal char arrays to improve memory efficiency
@@ -68,12 +70,18 @@ private:
     }
 
 public:
-    explicit CrackUtils(const char* charset) : charset_selected{ true }, valid{ std::string(charset) } {}
-    explicit CrackUtils(const std::string& charset) : charset_selected{ true }, valid{ charset } {}
-    explicit CrackUtils() : charset_selected{ true }, valid{ presets::valid } {}
+    explicit CrackUtils(const char* charset) : valid_chars{ std::string(charset) } {}
+    explicit CrackUtils(const std::string& charset) : valid_chars{ charset } {}
+    explicit CrackUtils() : valid_chars{ presets::printable } {}
 
     void set_bruting_charset(const std::string& chars) {
+        cout << "in copy\n";
         this->bruting_chars = chars;
+        this->cache.clear();
+    }
+
+    void set_bruting_charset(const std::string&& chars) {
+        this->bruting_chars = std::move(chars);
         this->cache.clear();
     }
     

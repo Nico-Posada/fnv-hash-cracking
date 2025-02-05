@@ -2,7 +2,7 @@ NAME = crack
 FILENAME = test
 OUTPUT_DIR = build
 CXX = g++
-CXXFLAGS = -x c++ -march=native -O3 -std=c++20 -Wall -Wextra -pedantic
+CXXFLAGS = -x c++ -march=native -O3 -std=c++20 -Wall -Wextra
 LIBS = -lfplll -lgmp
 INCLUDES = -I./src
 

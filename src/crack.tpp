@@ -9,9 +9,15 @@ bool CrackUtils<OFFSET_BASIS, PRIME, BIT_LEN>::try_crack_single(
     const std::string& prefix, /* default is "" */
     const std::string& suffix /* default is "" */
 ) {
-    if (!this->charset_selected) {
+    if (this->valid_chars.empty()) {
         // TODO have a different return value for this so it can terminate earlier in brute_n
-        cerr << "Never selected a valid charset!\n";
+        cerr << "Never selected a charset of valid characters!\n";
+        return false;
+    }
+
+    if (this->bruting_chars.empty()) {
+        // TODO have a different return value for this so it can terminate earlier in brute_n
+        cerr << "Never selected a charset of bruting characters!\n";
         return false;
     }
 
@@ -19,7 +25,7 @@ bool CrackUtils<OFFSET_BASIS, PRIME, BIT_LEN>::try_crack_single(
     mpz_ui_pow_ui(MOD.get_data(), 2U, BIT_LEN); // 2 ** BIT_LEN
 
     // change according to whatever youre working with
-    const std::string& valid_charset = this->valid;
+    const std::string& valid_charset = this->valid_chars;
 
     const uint32_t nn = expected_len - brute - prefix.size() - suffix.size();
     const uint32_t dim = nn + 2;
@@ -170,6 +176,7 @@ bool CrackUtils<OFFSET_BASIS, PRIME, BIT_LEN>::brute_n(
     // For the default fnv hash values, 8 averages a 93% success rate while 9 dips it down to ~50%.
     // Setting it to 7 is 100% accurate in my tests, but you're trading off 7% accuracy for it being (len bruteset)x slower
     // when trying to crack longer hashes, so pick your poison.
+    // TODO make this a class member variable, no need to hide it here
     constexpr uint32_t MAX_CRACK_LEN = 8;
 
     const uint32_t known_len = static_cast<uint32_t>(prefix.size() + suffix.size());
