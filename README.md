@@ -51,7 +51,7 @@ The binary will be output in the `build/` directory.
 
 To compile and run the test script, run the following 
 ```bash
-make run
+make run-test
 ```
 
 To use in your own program, just copy over the `src` directory to your project directory and you can include it in your build script as normal. This uses header files only, so no need to make any object files beforehand.
@@ -61,3 +61,5 @@ To use in your own program, just copy over the `src` directory to your project d
 - Clean up code, add more tests and actual test outputs.
 - Add multithreading support back in.
 - Maybe add a python module for this?
+- Add support for setting the hash/prime/bit len dynamically to make this into a proper CLI
+    * If this happens, maybe add JIT compilation for some speedup?

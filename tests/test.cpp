@@ -15,7 +15,7 @@ void print(std::string_view fmt, Args&&... args) {
     std::vformat_to(
         std::ostreambuf_iterator<char>(std::cout),
         fmt,
-        std::make_format_args(std::forward<Args>(args)...)
+        std::make_format_args(args...)
     );
 }
 #else
@@ -24,8 +24,12 @@ void print(std::string_view fmt, Args&&... args) {
 
 #include "crack.hpp"
 
+/* ======================================= */
+/*                 EXAMPLES                */
+/* ======================================= */
+
 // using a known initial string just to test
-void example_1() {
+bool example_1() {
     print("--- EXAMPLE 1 ---\n");
     using FNV_t = FNVUtilStatic<>;
     using CrackUtils_t = CrackUtils<>;
@@ -54,11 +58,11 @@ void example_1() {
         print("Failed ):\n");
     }
 
-    print("\n");
+    return result == to_hash;
 }
 
 // example of cracking hash without knowing what it is beforehand
-void example_2() {
+bool example_2() {
     print("--- EXAMPLE 2 ---\n");
     using CrackUtils_t = CrackUtils<>;
 
@@ -84,11 +88,11 @@ void example_2() {
         print("Failed ):\n");
     }
 
-    print("\n");
+    return result == "getalpha";
 }
 
 // cracking hash that's truncated to 63 bits which uses a different offset basis and prime
-void example_3() {
+bool example_3() {
     print("--- EXAMPLE 3 ---\n");
     constexpr uint64_t OFFSET_BASIS = 0xE4A68FF7D4912FD2;
     constexpr uint64_t PRIME = PRIME_233;
@@ -121,11 +125,11 @@ void example_3() {
         print("Failed ):\n");
     }
 
-    print("\n");
+    return result == to_hash;
 }
 
 // cracking hash and using a character list to help avoid returning weird collisions
-void example_4() {
+bool example_4() {
     print("--- EXAMPLE 4 ---\n");
 
     using FNV_t = FNVUtilStatic<>;
@@ -141,6 +145,7 @@ void example_4() {
         static std::string valid_func = "0123456789abcdefghijklmnopqrstuvwxyz_";
         static std::string valid_file = "0123456789abcdefghijklmnopqrstuvwxyz_./";
         static std::string valid_gsc = "0123456789abcdefghijklmnopqrstuvwxyz_./:";
+        static std::string valid_hex = "0123456789abcdef";
     }
 
     Ex: string charset = presets::valid_file;
@@ -170,15 +175,87 @@ void example_4() {
         print("Failed ):\n");
     }
 
-    print("\n");
+    return result == to_hash;
 }
 
-// example usages
+/* ======================================= */
+/*                TEST CASES               */
+/* ======================================= */
+// these wont be commented like the example cases above
+
+#define PRINT_TEST() print("Running {}\n", __FUNCTION__)
+
+bool test_changing_brute_charset() {
+    PRINT_TEST();
+
+    using FNV_t = FNVUtilStatic<>;
+    using CrackUtils_t = CrackUtils<>;
+
+    string to_hash = "abcdefghi";
+    uint64_t hashed = FNV_t::hash(to_hash);
+
+    auto crack = CrackUtils_t();
+    crack.set_bruting_charset("0123456789");
+
+    string result;
+
+    if (crack.brute_n(result, hashed, 9))
+    {
+        // it should not have found it with the given bruting charset
+        print("Found result '{}' when it should have found none!\n", result);
+        return false;
+    }
+
+    crack.set_bruting_charset(presets::valid);
+    if (crack.brute_n(result, hashed, 9))
+    {
+        bool ret = result == to_hash;
+        if (!ret) {
+            print("Found result '{}' but it was incorrect! {:#x} vs {:#x}\n", result, FNV_t::hash(result), hashed);
+        }
+        return ret;
+    }
+
+    print("Found no result after setting bruting charset!\n");
+    return false;
+}
+
+#define X(func) { func, #func }
+vector<pair<bool(*)(), string>> test_cases = {
+    X(example_1),
+    X(example_2),
+    X(example_3),
+    X(example_4),
+    X(test_changing_brute_charset)
+};
+#undef X
+
+// run tests/examples
 int main() {
-    example_1();
-    example_2();
-    example_3();
-    example_4();
+    uint32_t total_cases = test_cases.size();
+    uint32_t passed_cases = 0;
+    vector<string> failed_cases{};
+
+    for (const auto& [test_case, func_name] : test_cases) {
+        if (test_case()) {
+            passed_cases++;
+            print("Success!\n");
+        } else {
+            failed_cases.emplace_back(func_name);
+        }
+    }
+
+    print("\nTEST RESULTS\nTotal Tests: {}\nPassed: {}\nFailed: {}\n",
+          total_cases, passed_cases, failed_cases.size());
+    
+    if (!failed_cases.empty()) {
+        print("\nFailed test cases:\n");
+        for (const auto& name : failed_cases) {
+            print("{}\n", name);
+        }
+
+        return 1;
+    }
 
     return 0;
 }
