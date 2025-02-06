@@ -149,13 +149,14 @@ bool example_4() {
         static std::string ident = "abcdefghijklmnopqrstuvwxyz0123456789_"
     }
 
-    Ex: string charset = presets::valid_file;
+    Ex: string charset = presets::alphanum;
     */
 
     // setup
     auto crack = CrackUtils_t(charset);
 
     // you can set the characters using in the brute force section too
+    // the longer the charset, the longer the brute force will take
     crack.set_bruting_charset(charset);
 
     string to_hash = "abc9784de!";
@@ -187,11 +188,17 @@ bool example_4() {
 #define START_TEST_CASES(name) static vector<pair<string, function<bool()>>> name = {
 #define END_TEST_CASES() };
 
-#define TEST(func_name) \
-    { #func_name, []() -> bool { print("Running {}\n", #func_name);
+#define TEST(func_name) { #func_name, []() -> bool { print("Running {}\n", #func_name);
 #define END_TEST() }},
 
+#define ADD_TEST(func) { #func, func },
+
 START_TEST_CASES(test_cases)
+
+ADD_TEST(example_1)
+ADD_TEST(example_2)
+ADD_TEST(example_3)
+ADD_TEST(example_4)
 
 TEST(test_changing_brute_charset)
     using FNV_t = FNVUtilStatic<>;
@@ -322,13 +329,15 @@ int main() {
     for (const auto& [func_name, test_case] : test_cases) {
         if (test_case()) {
             passed_cases++;
-            print("Success!\n");
+            print("\x1b[32mPASS\x1b[0m\n");
         } else {
             failed_cases.emplace_back(func_name);
+            print("\x1b[31mFAIL\x1b[0m\n");
         }
     }
 
     auto test_end_time = std::chrono::system_clock::now();
+    auto time_taken_ms = std::chrono::duration_cast<std::chrono::milliseconds>(test_end_time - test_start_time);
 
     print("\nTEST RESULTS\n"
           "Total Tests: {}\n"
@@ -336,7 +345,7 @@ int main() {
           "Failed: {}\n"
           "Time Taken: {:.3f}s\n",
           total_cases, passed_cases, failed_cases.size(),
-          std::chrono::duration_cast<std::chrono::milliseconds>(test_end_time - test_start_time).count() / 1000.0);
+          time_taken_ms.count() / 1000.0);
     
     if (!failed_cases.empty()) {
         print("\nFailed test cases:\n");

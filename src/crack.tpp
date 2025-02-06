@@ -10,15 +10,13 @@ CrackStatus CrackUtils<OFFSET_BASIS, PRIME, BIT_LEN>::try_crack_single(
     const std::string& suffix /* default is "" */
 ) {
     if (this->valid_chars.empty()) {
-        // TODO have a different return value for this so it can terminate earlier in brute_n
         cerr << "Never selected a charset of valid characters!\n";
-        return CrackStatus::MISSING_CHARSET;
+        return MISSING_CHARSET;
     }
 
     if (this->bruting_chars.empty()) {
-        // TODO have a different return value for this so it can terminate earlier in brute_n
         cerr << "Never selected a charset of bruting characters!\n";
-        return CrackStatus::MISSING_CHARSET;
+        return MISSING_CHARSET;
     }
 
     Z_NR<mpz_t> MOD;
@@ -63,8 +61,9 @@ CrackStatus CrackUtils<OFFSET_BASIS, PRIME, BIT_LEN>::try_crack_single(
     // perform reverse of fnv algo to get hash without suffix applied
     uint64_t ntarget = target;
     if (!suffix.empty()) {
+        constexpr uint64_t INV_PRIME = InverseHelper<PRIME, BIT_LEN>::inverse();
         for (int32_t i = suffix.size() - 1; i >= 0; --i) {
-            ntarget *= InverseHelper<PRIME, BIT_LEN>::inverse();
+            ntarget *= INV_PRIME;
             ntarget ^= suffix.at(i);
         }
     }
@@ -94,6 +93,8 @@ CrackStatus CrackUtils<OFFSET_BASIS, PRIME, BIT_LEN>::try_crack_single(
         M(dim - 2, 0) = m;
 
         // M *= Q
+        // TODO this multiplication is very expensive, and since only one row is changed from _M, we
+        // should be able to cache the results of all the other rows
         for (uint32_t x = 0; x < dim; ++x) {
             const auto& Q_val = Q(x, x).get_data();
             for (uint32_t y = 0; y < dim; ++y) {
@@ -152,8 +153,8 @@ CrackStatus CrackUtils<OFFSET_BASIS, PRIME, BIT_LEN>::try_crack_single(
                 const uint64_t hashed_result = FNV::hash(possible_result, OFFSET_BASIS, PRIME);
                 if (hashed_result == target)
                 {
-                    result = possible_result;
-                    return CrackStatus::HASH_CRACKED;
+                    result = std::move(possible_result);
+                    return HASH_CRACKED;
                 }
 
                 cerr << std::format("Got a false positive '{}' ({:#x} vs {:#x})\n", possible_result, hashed_result, target);
@@ -161,7 +162,7 @@ CrackStatus CrackUtils<OFFSET_BASIS, PRIME, BIT_LEN>::try_crack_single(
         }
     }
 
-    return CrackStatus::HASH_NOT_CRACKED;
+    return HASH_NOT_CRACKED;
 }
 
 template <uint64_t OFFSET_BASIS, uint64_t PRIME, uint32_t BIT_LEN>
@@ -183,11 +184,11 @@ CrackStatus CrackUtils<OFFSET_BASIS, PRIME, BIT_LEN>::brute_n(
     for (uint32_t n = 1 + known_len; n <= max_search_len + known_len; ++n) {
         const uint32_t brute_len = n <= MAX_CRACK_LEN + known_len ? 0 : n - known_len - MAX_CRACK_LEN;
         CrackStatus ret = this->try_crack_single(result, target, n, brute_len, prefix, suffix);
-        if (ret == CrackStatus::HASH_NOT_CRACKED)
+        if (ret == HASH_NOT_CRACKED)
             continue;
 
         return ret;
     }
 
-    return CrackStatus::HASH_NOT_CRACKED;
+    return HASH_NOT_CRACKED;
 }
