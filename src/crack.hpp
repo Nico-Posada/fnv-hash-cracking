@@ -89,6 +89,14 @@ public:
         this->bruting_chars = std::move(chars);
         this->cache.clear();
     }
+
+    void set_valid_charset(const std::string& chars) {
+        this->valid_chars = chars;
+    }
+
+    void set_valid_charset(const std::string&& chars) {
+        this->valid_chars = std::move(chars);
+    }
     
     CrackStatus try_crack_single(
         std::string& result,
@@ -100,13 +108,15 @@ public:
     );
 
     CrackStatus brute_n(
-        string& result,
+        std::string& result,
         const uint64_t target,
         const uint32_t max_search_len,
-        const string& prefix = "",
-        const string& suffix = ""
+        const std::string& prefix = "",
+        const std::string& suffix = ""
     );
 };
 
 // function definitions in here
+#define __CRACK_TPP
 #include "crack.tpp"
+#undef __CRACK_TPP

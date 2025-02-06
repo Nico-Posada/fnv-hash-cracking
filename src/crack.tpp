@@ -1,4 +1,7 @@
-#pragma once
+#include "crack.hpp"
+#ifndef __CRACK_TPP
+#   error "crack.tpp is a template definition file for crack.hpp, do not use it outside of that"
+#endif
 
 template <uint64_t OFFSET_BASIS, uint64_t PRIME, uint32_t BIT_LEN>
 CrackStatus CrackUtils<OFFSET_BASIS, PRIME, BIT_LEN>::try_crack_single(
@@ -21,9 +24,6 @@ CrackStatus CrackUtils<OFFSET_BASIS, PRIME, BIT_LEN>::try_crack_single(
 
     Z_NR<mpz_t> MOD;
     mpz_ui_pow_ui(MOD.get_data(), 2U, BIT_LEN); // 2 ** BIT_LEN
-
-    // change according to whatever youre working with
-    const std::string& valid_charset = this->valid_chars;
 
     const uint32_t nn = expected_len - brute - prefix.size() - suffix.size();
     const uint32_t dim = nn + 2;
@@ -75,12 +75,12 @@ CrackStatus CrackUtils<OFFSET_BASIS, PRIME, BIT_LEN>::try_crack_single(
     }
 
     // set up fnv class
-    using FNV = FNVUtil<BIT_LEN>;
-    const uint64_t prefixed_hash = FNV::hash(prefix, OFFSET_BASIS, PRIME);
+    using FNV_t = FNVUtil<BIT_LEN>;
+    const uint64_t prefixed_hash = FNV_t::hash(prefix, OFFSET_BASIS, PRIME);
 
     for (const auto& br : this->product(this->bruting_chars, brute)) {
         // get the hash without the prefix applied
-        const uint64_t new_hash = FNV::hash(br, prefixed_hash, PRIME);
+        const uint64_t new_hash = FNV_t::hash(br, prefixed_hash, PRIME);
 
         uint64_t m = new_hash * P - ntarget;
         if constexpr (BIT_LEN != 64) {
@@ -136,7 +136,7 @@ CrackStatus CrackUtils<OFFSET_BASIS, PRIME, BIT_LEN>::try_crack_single(
                 const int32_t b = a;
                 a += cur;
                 const uint32_t x = a ^ b;
-                if (x >= 128 || valid_charset.find(x) == std::string::npos) {
+                if (x >= 128 || this->valid_chars.find(x) == std::string::npos) {
                     success = false;
                     break;
                 }
@@ -150,7 +150,7 @@ CrackStatus CrackUtils<OFFSET_BASIS, PRIME, BIT_LEN>::try_crack_single(
 
                 // double check to confirm we have a valid hash. sometimes this can
                 // get false positives we need to ignore
-                const uint64_t hashed_result = FNV::hash(possible_result, OFFSET_BASIS, PRIME);
+                const uint64_t hashed_result = FNV_t::hash(possible_result, OFFSET_BASIS, PRIME);
                 if (hashed_result == target)
                 {
                     result = std::move(possible_result);
@@ -167,11 +167,11 @@ CrackStatus CrackUtils<OFFSET_BASIS, PRIME, BIT_LEN>::try_crack_single(
 
 template <uint64_t OFFSET_BASIS, uint64_t PRIME, uint32_t BIT_LEN>
 CrackStatus CrackUtils<OFFSET_BASIS, PRIME, BIT_LEN>::brute_n(
-    string& result,
+    std::string& result,
     const uint64_t target,
     const uint32_t max_search_len,
-    const string& prefix, /* default is "" */
-    const string& suffix  /* default is "" */
+    const std::string& prefix, /* default is "" */
+    const std::string& suffix  /* default is "" */
 ) {
     // The higher this value gets, the less accurate results will become.
     // For the default fnv hash values, 8 averages a 93% success rate while 9 dips it down to ~50%.

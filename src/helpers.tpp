@@ -1,8 +1,12 @@
-#pragma once
+#include "helpers.hpp"
+#ifndef __HELPER_TPP
+#   error "helpers.tpp is a template definition file for helpers.hpp, do not use it outside of that"
+#endif
+
 // all this for compile-time modular multiplicative inverse, thanks C++
 
 static constexpr uint64_t _mulmod(uint64_t a, uint64_t b, uint64_t m) {
-    int64_t res = 0;
+    uint64_t res = 0;
     
     while (a != 0) {
         if (a & 1) res = (res + b) % m;

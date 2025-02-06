@@ -17,5 +17,6 @@ public:
     static constexpr uint64_t inverse();
 };
 
-/* ----------------------------------------------------- */
+#define __HELPER_TPP
 #include "helpers.tpp"
+#undef __HELPER_TPP
