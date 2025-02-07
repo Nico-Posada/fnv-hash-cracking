@@ -49,7 +49,7 @@ public:
     static constexpr uint64_t hash(const std::string& string) {
         uint64_t hash = OFFSET_BASIS;
         constexpr uint64_t prime = PRIME;
-        for (const char& chr : string) {
+        for (const char chr : string) {
             char cur = chr;
             if (static_cast<unsigned char>(cur - 'A') <= 25)
                 cur |= 0x20;
@@ -96,7 +96,7 @@ public:
 
     static constexpr uint64_t hash(const std::string& string, const uint64_t OFFSET_BASIS, const uint64_t PRIME) {
         uint64_t hash = OFFSET_BASIS;
-        for (const char& chr : string) {
+        for (const char chr : string) {
             char cur = chr;
             if (static_cast<unsigned char>(cur - 'A') <= 25)
                 cur |= 0x20;
