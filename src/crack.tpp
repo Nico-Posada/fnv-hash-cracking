@@ -37,11 +37,10 @@ CrackStatus CrackUtils<OFFSET_BASIS, PRIME, BIT_LEN>::try_crack_single(
         P &= (1ULL << BIT_LEN) - 1;
     }
 
-    Z_NR<mpz_t> start;
-    mpz_set_ui(start.get_data(), 1ULL << 12); // 2 ** 12
-
+    // TODO Q will never contain numbers greater than 2**64 and it also never changes
+    // this can be changed to a normal 2d array instead of an mpz matrix
     ZZ_mat<mpz_t> Q(dim, dim);
-    Q(0, 0) = start;
+    Q(0, 0) = 1ULL << 12; // 2 ** 12
     for (uint32_t i = 1; i < dim - 1; ++i)
         Q(i, i) = 1ULL << 4; // 2 ** 4
     Q(dim - 1, dim - 1) = 1ULL << 10; // 2 ** 10
@@ -65,6 +64,17 @@ CrackStatus CrackUtils<OFFSET_BASIS, PRIME, BIT_LEN>::try_crack_single(
         for (int32_t i = suffix.size() - 1; i >= 0; --i) {
             ntarget *= INV_PRIME;
             ntarget ^= suffix.at(i);
+        }
+    }
+
+    // M *= Q (part 1)
+    // this should be done on every iteration, but since we only change one element in the M matrix
+    // on each iteration, we can precompute almost everything else
+    for (uint32_t x = 0; x < dim; ++x) {
+        const auto& Q_val = Q(x, x).get_data();
+        for (uint32_t y = 0; y < dim; ++y) {
+            auto& data = _M(y, x).get_data();
+            mpz_mul(data, data, Q_val);
         }
     }
 
@@ -92,16 +102,8 @@ CrackStatus CrackUtils<OFFSET_BASIS, PRIME, BIT_LEN>::try_crack_single(
         M = _M;
         M(dim - 2, 0) = m;
 
-        // M *= Q
-        // TODO this multiplication is very expensive, and since only one row is changed from _M, we
-        // should be able to cache the results of all the other rows
-        for (uint32_t x = 0; x < dim; ++x) {
-            const auto& Q_val = Q(x, x).get_data();
-            for (uint32_t y = 0; y < dim; ++y) {
-                auto& data = M(y, x).get_data();
-                mpz_mul(data, data, Q_val);
-            }
-        }
+        // M *= Q (part 2)
+        mpz_mul(M(dim - 2, 0).get_data(), M(dim - 2, 0).get_data(), Q(0, 0).get_data());
 
         // M = M.LLL()
         lll_reduction(M, LLL_DEF_DELTA, LLL_DEF_ETA, LM_HEURISTIC, FT_DOUBLE);
