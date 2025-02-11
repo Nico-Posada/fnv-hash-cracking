@@ -71,8 +71,10 @@ int main() {
     const auto rand_cases = gen_random_hashes(1000, 10, presets::ident);
     auto bm_start_time = std::chrono::system_clock::now();
 
-    auto crack = CrackUtils<>(presets::ident);
+    // auto crack = CrackUtils<>(presets::ident);
+    auto crack = CrackUtils<>();
     crack.set_bruting_charset(presets::ident);
+    crack.set_suppress_false_positive_msg();
 
     for (const auto& [hash, orig_str] : rand_cases) {
         std::string result;
@@ -93,16 +95,16 @@ int main() {
     auto time_taken_ms = std::chrono::duration_cast<std::chrono::milliseconds>(bm_end_time - bm_start_time);
 
     print("--- RESULTS ---\n");
-    print(" success   : {}\n", success);
-    print(" failed    : {}\n", failed);
-    print(" collision : {}\n", collision);
-    print(" total     : {}\n", total_cases);
+    print(" Success   : {}\n", success);
+    print(" Failed    : {}\n", failed);
+    print(" Collision : {}\n", collision);
+    print(" Total     : {}\n", total_cases);
     print("\n");
     print("---- STATS ----\n");
-    print(" valid hashes    : {:.2f}%\n", (success + collision) * 100.0 / total_cases);
-    print(" correct hashes  : {:.2f}%\n", (success * 100.0) / total_cases);
-    print(" time taken      : {:.3f}s\n", time_taken_ms.count() / 1000.0);
-    print(" time taken/hash : {:.3f}s\n", time_taken_ms.count() / 1000.0 / total_cases);
+    print(" Valid results   : {:.2f}%\n", (success + collision) * 100.0 / total_cases);
+    print(" Correct results : {:.2f}%\n", (success * 100.0) / total_cases);
+    print(" Time taken      : {:.3f}s\n", time_taken_ms.count() / 1000.0);
+    print(" Time taken/hash : {:.3f}s\n", time_taken_ms.count() / 1000.0 / total_cases);
 
     return 0;
 }

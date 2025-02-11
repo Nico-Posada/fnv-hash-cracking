@@ -6,7 +6,7 @@ CXXFLAGS = -x c++ -march=native -O3 -std=c++20 -Wall -Wextra
 LIBS = -lfplll -lgmp
 INCLUDES = -I./src
 
-.PHONY: build run-test test clean
+.PHONY: build test run-test benchmark run-benchmark clean
 
 test:
 	@mkdir -vp $(OUTPUT_DIR)

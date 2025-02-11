@@ -159,8 +159,10 @@ CrackStatus CrackUtils<OFFSET_BASIS, PRIME, BIT_LEN>::try_crack_single(
                     result = std::move(possible_result);
                     return HASH_CRACKED;
                 }
-
-                cerr << std::format("Got a false positive '{}' ({:#x} vs {:#x})\n", possible_result, hashed_result, target);
+                
+                if (!this->suppress_false_positive_msg) {
+                    cerr << std::format("Got a false positive '{}' ({:#x} vs {:#x})\n", possible_result, hashed_result, target);
+                }
             }
         }
     }

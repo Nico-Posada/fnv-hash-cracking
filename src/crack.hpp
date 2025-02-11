@@ -45,6 +45,11 @@ private:
     // TODO: use normal char arrays to improve memory efficiency
     std::unordered_map<int, std::vector<std::string>> cache;
 
+    // due to some error when doing the lattice reduction, it's possible for the crack function
+    // to find a solution it thinks is valid but isn't. this is checked for and logs an error message
+    // to stderr when it happens. this can sometimes clutter the output so you can control whether to disable it or not
+    bool suppress_false_positive_msg = false;
+
     // generate a vector of all permutations of `chars` of length `repeat`
     // uses caching to prevent it from generating this list multiple times
     // TODO make thread safe to prevent it from generating redundant lists
@@ -97,6 +102,10 @@ public:
 
     void set_valid_charset(const std::string&& chars) {
         this->valid_chars = std::move(chars);
+    }
+
+    void set_suppress_false_positive_msg(bool val = true) {
+        this->suppress_false_positive_msg = val;
     }
     
     CrackStatus try_crack_single(
