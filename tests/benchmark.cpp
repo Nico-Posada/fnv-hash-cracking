@@ -71,9 +71,7 @@ int main() {
     const auto rand_cases = gen_random_hashes(1000, 10, presets::ident);
     auto bm_start_time = std::chrono::system_clock::now();
 
-    // auto crack = CrackUtils<>(presets::ident);
-    auto crack = CrackUtils<>();
-    crack.set_bruting_charset(presets::ident);
+    auto crack = CrackUtils<>(presets::ident, presets::ident);
     crack.set_suppress_false_positive_msg();
 
     for (const auto& [hash, orig_str] : rand_cases) {

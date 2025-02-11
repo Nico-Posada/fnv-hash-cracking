@@ -82,9 +82,20 @@ private:
     }
 
 public:
-    explicit CrackUtils(const char* charset) : valid_chars{ std::string(charset) } {}
-    explicit CrackUtils(const std::string& charset) : valid_chars{ charset } {}
-    explicit CrackUtils() : valid_chars{ presets::printable } {}
+    explicit CrackUtils()
+        : valid_chars{ presets::printable } {}
+    explicit CrackUtils(const std::string& charset)
+        : valid_chars{ charset } {}
+    explicit CrackUtils(const std::string&& charset)
+        : valid_chars{ std::move(charset) } {}
+    explicit CrackUtils(const std::string& valid_charset, const std::string& bruting_charset)
+        : valid_chars{ valid_charset }, bruting_chars{ bruting_charset } {}
+    explicit CrackUtils(const std::string&& valid_charset, const std::string& bruting_charset)
+        : valid_chars{ std::move(valid_charset) }, bruting_chars{ bruting_charset } {}
+    explicit CrackUtils(const std::string& valid_charset, const std::string&& bruting_charset)
+        : valid_chars{ valid_charset }, bruting_chars{ std::move(bruting_charset) } {}
+    explicit CrackUtils(const std::string&& valid_charset, const std::string&& bruting_charset)
+        : valid_chars{ std::move(valid_charset) }, bruting_chars{ std::move(bruting_charset) } {}
 
     void set_bruting_charset(const std::string& chars) {
         this->bruting_chars = chars;

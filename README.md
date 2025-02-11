@@ -57,10 +57,9 @@ make run-test
 To use in your own program, just copy over the `src` directory to your project directory and you can include it in your build script as normal. This uses header files only, so no need to make any object files beforehand.
 
 # TODO
-- fplll has docker containers. Figure out how to make this work in them and provide steps.
-- Clean up code, add more tests and actual test outputs.
+- Clean up code, add more tests
 - Add multithreading support back in.
 - Maybe add a python module for this?
+- Benchmarks (WIP)
 - Add support for setting the hash/prime/bit len dynamically to make this into a proper CLI
     * If this happens, maybe add JIT compilation for some speedup?
-- Benchmarks
