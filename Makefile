@@ -1,5 +1,5 @@
-NAME = crack
-FILENAME = test
+TEST_NAME = test
+BENCHMARK_NAME = benchmark
 OUTPUT_DIR = build
 CXX = g++
 CXXFLAGS = -x c++ -march=native -O3 -std=c++20 -Wall -Wextra
@@ -9,13 +9,18 @@ INCLUDES = -I./src
 .PHONY: build run-test test clean
 
 test:
-	@if [ ! -d $(OUTPUT_DIR) ]; then \
-		mkdir $(OUTPUT_DIR); \
-	fi
-	$(CXX) $(CXXFLAGS) -o $(OUTPUT_DIR)/$(NAME) tests/$(FILENAME).cpp $(LIBS) $(INCLUDES)
+	@mkdir -vp $(OUTPUT_DIR)
+	$(CXX) $(CXXFLAGS) -o $(OUTPUT_DIR)/$(TEST_NAME) tests/$(TEST_NAME).cpp $(LIBS) $(INCLUDES)
 
 run-test: test
-	./$(OUTPUT_DIR)/$(NAME)
+	./$(OUTPUT_DIR)/$(TEST_NAME)
+
+benchmark:
+	@mkdir -vp $(OUTPUT_DIR)
+	$(CXX) $(CXXFLAGS) -o $(OUTPUT_DIR)/$(BENCHMARK_NAME) tests/$(BENCHMARK_NAME).cpp $(LIBS) $(INCLUDES)
+
+run-benchmark: benchmark
+	./$(OUTPUT_DIR)/$(BENCHMARK_NAME)
 
 clean:
 	@if [ ! -d $(OUTPUT_DIR) ]; then \

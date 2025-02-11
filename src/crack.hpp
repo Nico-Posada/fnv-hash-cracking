@@ -1,6 +1,7 @@
 #pragma once
 #include <cstdint>
 #include <string>
+#include <format>
 #include <iomanip>
 
 #include "helpers.hpp"
