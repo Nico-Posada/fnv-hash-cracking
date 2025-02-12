@@ -214,7 +214,7 @@ TEST(test_changing_brute_charset)
 
     if (crack.brute_n(result, hashed, 9) == HASH_CRACKED)
     {
-        print("Found result '{}' when it should have found none!\n", result);
+        print("Found result \"{}\" when it should have found none!\n", result);
         return false;
     }
 
@@ -223,7 +223,7 @@ TEST(test_changing_brute_charset)
     {
         bool ret = result == to_hash;
         if (!ret) {
-            print("Found result '{}' but it was incorrect! {:#x} vs {:#x}\n", result, FNV_t::hash(result), hashed);
+            print("Found result \"{}\" but it was incorrect! {:#x} vs {:#x}\n", result, FNV_t::hash(result), hashed);
         }
         return ret;
     }
@@ -252,7 +252,7 @@ TEST(test_different_offset_basis)
 
     if (result != to_hash)
     {
-        print("Found result '{}', but wasn't expected result! {:#x} vs {:#x}\n", result, FNV_t::hash(result), hashed);
+        print("Found result \"{}\", but wasn't expected result! {:#x} vs {:#x}\n", result, FNV_t::hash(result), hashed);
         return false;
     }
 
@@ -280,7 +280,7 @@ TEST(test_different_prime)
 
     if (result != to_hash)
     {
-        print("Found result '{}', but wasn't expected result! {:#x} vs {:#x}\n", result, FNV_t::hash(result), hashed);
+        print("Found result \"{}\", but wasn't expected result! {:#x} vs {:#x}\n", result, FNV_t::hash(result), hashed);
         return false;
     }
 
@@ -309,7 +309,7 @@ TEST(test_different_bit_len)
 
     if (result != to_hash)
     {
-        print("Found result '{}', but wasn't expected result! {:#x} vs {:#x}\n", result, FNV_t::hash(result), hashed);
+        print("Found result \"{}\", but wasn't expected result! {:#x} vs {:#x}\n", result, FNV_t::hash(result), hashed);
         return false;
     }
 

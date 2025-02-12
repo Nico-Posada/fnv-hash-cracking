@@ -1,6 +1,6 @@
 #include "crack.hpp"
 #ifndef __CRACK_TPP
-#   error "crack.tpp is a template definition file for crack.hpp, do not use it outside of that"
+#   error "crack.tpp is a template definition file for crack.hpp, include crack.hpp instead"
 #endif
 
 template <uint64_t OFFSET_BASIS, uint64_t PRIME, uint32_t BIT_LEN>
@@ -38,7 +38,7 @@ CrackStatus CrackUtils<OFFSET_BASIS, PRIME, BIT_LEN>::try_crack_single(
     }
 
     // using VLA instead of malloc
-    uint64_t Q[dim]{};
+    uint64_t Q[dim];
     Q[0] = 1ULL << 12; // 2 ** 12
     for (uint32_t i = 1; i < dim - 1; ++i) {
         Q[i] = 1ULL << 4; // 2 ** 4
@@ -161,7 +161,7 @@ CrackStatus CrackUtils<OFFSET_BASIS, PRIME, BIT_LEN>::try_crack_single(
                 }
                 
                 if (!this->suppress_false_positive_msg) {
-                    cerr << std::format("Got a false positive '{}' ({:#x} vs {:#x})\n", possible_result, hashed_result, target);
+                    cerr << std::format("Got a false positive \"{}\" ({:#x} vs {:#x})\n", possible_result, hashed_result, target);
                 }
             }
         }

@@ -1,5 +1,5 @@
 # fnv-hash-cracking
-Crack hashes hashed with the [FNV-1a](https://en.wikipedia.org/wiki/Fowler–Noll–Vo_hash_function#FNV-1a_hash) algorithm without full brute force
+Crack hashes or find collisions for hashes hashed with the [FNV-1a](https://en.wikipedia.org/wiki/Fowler–Noll–Vo_hash_function#FNV-1a_hash) algorithm without full brute force
 
 # CREDITS
 Huge thank you to [ConnorM](https://connor-mccartney.github.io) for his [incredible writeup](https://connor-mccartney.github.io/cryptography/other/Trying-to-crack-COD-FNV-hashes) and writing the original python proof of concept of which this is based off of. He does some incredible work with cryptography and his writeups are worth a read.
@@ -43,18 +43,19 @@ brew install fplll
 
 More information on compilation and installation specifics can be found in the [fplll repository](https://github.com/fplll/fplll?tab=readme-ov-file#compilation).
 
-To compile [the test cases](src/main.cpp), run the following
-```bash
-make test
-```
-The binary will be output in the `build/` directory.
+# Examples
+To find examples for different use cases, check out the [examples](./examples/) directory for some files with basic examples.
 
+# Tests and Benchmarks (WIP)
 To compile and run the test script, run the following 
 ```bash
 make run-test
 ```
 
-To use in your own program, just copy over the `src` directory to your project directory and you can include it in your build script as normal. This uses header files only, so no need to make any object files beforehand.
+To compile and run the benchmark script, run the following 
+```bash
+make run-benchmark
+```
 
 # TODO
 - Clean up code, add more tests

@@ -38,8 +38,7 @@ private:
     std::string valid_chars = "";
 
     // characters to use for brute forcing, the more you add the longer it'll take.
-    // this is just the default list, can be changed with `set_bruting_charset`
-    std::string bruting_chars = "0123456789abcdefghijklmnopqrstuvwxyz_.";
+    std::string bruting_chars = "";
 
     // cache of character combinations for the brute force
     // TODO: use normal char arrays to improve memory efficiency
@@ -53,6 +52,7 @@ private:
     // generate a vector of all permutations of `chars` of length `repeat`
     // uses caching to prevent it from generating this list multiple times
     // TODO make thread safe to prevent it from generating redundant lists
+    // XXX should this be a generator instead?
     std::vector<std::string>& product(const std::string_view& chars, int repeat) {        
         auto it = this->cache.find(repeat);
         if (it != this->cache.end())
@@ -83,11 +83,11 @@ private:
 
 public:
     explicit CrackUtils()
-        : valid_chars{ presets::printable } {}
+        : valid_chars{ presets::printable }, bruting_chars{ presets::ident } {}
     explicit CrackUtils(const std::string& charset)
-        : valid_chars{ charset } {}
+        : valid_chars{ charset }, bruting_chars{ presets::ident } {}
     explicit CrackUtils(const std::string&& charset)
-        : valid_chars{ std::move(charset) } {}
+        : valid_chars{ std::move(charset) }, bruting_chars{ presets::ident } {}
     explicit CrackUtils(const std::string& valid_charset, const std::string& bruting_charset)
         : valid_chars{ valid_charset }, bruting_chars{ bruting_charset } {}
     explicit CrackUtils(const std::string&& valid_charset, const std::string& bruting_charset)
