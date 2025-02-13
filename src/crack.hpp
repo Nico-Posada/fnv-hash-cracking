@@ -40,46 +40,10 @@ private:
     // characters to use for brute forcing, the more you add the longer it'll take.
     std::string bruting_chars = "";
 
-    // cache of character combinations for the brute force
-    // TODO: use normal char arrays to improve memory efficiency
-    std::unordered_map<int, std::vector<std::string>> cache;
-
     // due to some error when doing the lattice reduction, it's possible for the crack function
     // to find a solution it thinks is valid but isn't. this is checked for and logs an error message
     // to stderr when it happens. this can sometimes clutter the output so you can control whether to disable it or not
     bool suppress_false_positive_msg = false;
-
-    // generate a vector of all permutations of `chars` of length `repeat`
-    // uses caching to prevent it from generating this list multiple times
-    // TODO make thread safe to prevent it from generating redundant lists
-    // XXX should this be a generator instead?
-    std::vector<std::string>& product(const std::string_view& chars, int repeat) {        
-        auto it = this->cache.find(repeat);
-        if (it != this->cache.end())
-            return it->second;
-        
-        uint32_t vec_length = 1;
-        for (int i = 0; i < repeat; ++i) {
-            vec_length *= chars.size();
-        }
-        
-        std::vector<std::string> result;
-        result.reserve(vec_length);
-
-        function<void(int, std::string&&)> generate = [&](int depth, std::string&& current) {
-            if (depth == 0) {
-                result.emplace_back(current);
-                return;
-            }
-            
-            for (const char c : chars)
-                generate(depth - 1, std::move(current + c));
-        };
-        
-        generate(repeat, std::move(std::string()));
-        this->cache[repeat] = result;    
-        return this->cache[repeat];
-    }
 
 public:
     explicit CrackUtils()
@@ -99,12 +63,10 @@ public:
 
     void set_bruting_charset(const std::string& chars) {
         this->bruting_chars = chars;
-        this->cache.clear();
     }
 
     void set_bruting_charset(const std::string&& chars) {
         this->bruting_chars = std::move(chars);
-        this->cache.clear();
     }
 
     void set_valid_charset(const std::string& chars) {

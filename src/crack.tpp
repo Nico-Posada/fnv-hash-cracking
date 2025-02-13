@@ -89,7 +89,7 @@ CrackStatus CrackUtils<OFFSET_BASIS, PRIME, BIT_LEN>::try_crack_single(
     using FNV_t = FNVUtil<BIT_LEN>;
     const uint64_t prefixed_hash = FNV_t::hash(prefix, OFFSET_BASIS, PRIME);
 
-    for (const auto& br : this->product(this->bruting_chars, brute)) {
+    for (char* br : ProductManager::singleton().get(this->bruting_chars, brute)) {
         // get the hash without the prefix applied
         const uint64_t new_hash = FNV_t::hash(br, prefixed_hash, PRIME);
 

@@ -2,7 +2,7 @@ TEST_NAME = test
 BENCHMARK_NAME = benchmark
 OUTPUT_DIR = build
 CXX = g++
-CXXFLAGS = -x c++ -march=native -O3 -std=c++20 -Wall -Wextra
+CXXFLAGS = -x c++ -march=native -O3 -std=c++20
 LIBS = -lfplll -lgmp
 INCLUDES = -I./src
 
