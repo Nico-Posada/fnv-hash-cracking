@@ -20,15 +20,17 @@ public:
         this->str_size = static_cast<size_t>(repeat) + 1;
 
         uint64_t arr_size = 1;
-        for (uint32_t i = 0; i < repeat; ++i) {
-            arr_size *= charset.size();
+        if (!charset.empty()) {
+            for (uint32_t i = 0; i < repeat; ++i) {
+                arr_size *= charset.size();
+            }
         }
 
         // each string needs repeat + null terminator bytes
         this->str_buffer = new char[arr_size * this->str_size];
 
         // buffer to generate strings to copy to str_buffer
-        char cur_product[8];
+        char cur_product[this->str_size];
         char* cur_buf_ptr = this->str_buffer;
 
         std::function<void(const uint32_t)> generate = [&](const uint32_t depth) {
@@ -101,6 +103,7 @@ public:
     }
 };
 
+// manager for product objects to cache old results since odds are they'll be used again in the future
 class ProductManager {
 private:
     std::map<uint64_t /* hash */, Product> cache;
@@ -126,15 +129,15 @@ public:
             return get_empty_product();
         }
 
-        const uint64_t hashed_arg = this->hash_arg(charset, repeat);
-        auto charset_it = this->cache.find(hashed_arg);
+        const uint64_t hashed_arg = hash_arg(charset, repeat);
+        const auto charset_it = this->cache.find(hashed_arg);
         if (charset_it != cache.end()) {
-            // print("got cache hit for ({}, {})!\n", charset, repeat);
             return charset_it->second;
         }
 
         // construct Product in place to prevent destructor from being called prematurely
         this->cache.emplace(std::piecewise_construct, std::make_tuple(hashed_arg), std::make_tuple(charset, repeat));
+
         return this->cache[hashed_arg];
     }
 };
