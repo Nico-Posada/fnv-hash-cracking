@@ -4,7 +4,10 @@
 #include <format>
 #include <iomanip>
 
+#define __CRACK_HPP
 #include "helpers.hpp"
+#undef __CRACK_HPP
+
 #include "fnv.hpp"
 #include "defs.hpp"
 #include "fplll.h"

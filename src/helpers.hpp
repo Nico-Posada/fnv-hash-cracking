@@ -1,4 +1,8 @@
 #pragma once
+#ifndef __CRACK_HPP
+#   error "helpers.hpp is only to be used internally by crack.hpp, include that instead"
+#endif
+
 #include <cstdint>
 #include <iostream>
 #include <cstring>
@@ -59,14 +63,14 @@ public:
     }
 
     // basic c++ iterator implementation for special for loops
-    class Iterator {
+    class iterator {
     private:
         char* ptr;
         const char* end;
         const size_t str_size;
 
     public:
-        Iterator(char* start, const char* end, const size_t str_size)
+        iterator(char* start, const char* end, const size_t str_size)
             : ptr{ start }, end{ end }, str_size{ str_size }
         {}
 
@@ -74,37 +78,37 @@ public:
             return ptr;
         }
 
-        Iterator& operator++() {
+        iterator& operator++() {
             this->ptr += this->str_size;
             return *this;
         }
 
-        Iterator operator++(int) {
-            Iterator ret = *this;
+        iterator operator++(int) {
+            iterator ret = *this;
             ret.ptr += ret.str_size;
             return ret;
         }
 
-        bool operator!=(const Iterator& other) const {
+        bool operator!=(const iterator& other) const {
             return this->ptr != other.ptr;
         }
 
-        bool operator==(const Iterator& other) const {
+        bool operator==(const iterator& other) const {
             return this->ptr == other.ptr;
         }
     };
 
-    Iterator begin() {
-        return Iterator(this->str_buffer, this->end_str_buffer, this->str_size);
+    iterator begin() {
+        return iterator(this->str_buffer, this->end_str_buffer, this->str_size);
     }
 
-    Iterator end() {
-        return Iterator(const_cast<char*>(this->end_str_buffer), this->end_str_buffer, this->str_size);
+    iterator end() {
+        return iterator(const_cast<char*>(this->end_str_buffer), this->end_str_buffer, this->str_size);
     }
 };
 
 // manager for product objects to cache old results since odds are they'll be used again in the future
-class ProductManager {
+class ProductCache {
 private:
     std::map<uint64_t /* hash */, Product> cache;
 
@@ -119,9 +123,9 @@ private:
     }
 
 public:
-    static ProductManager& singleton() {
-        static ProductManager manager{};
-        return manager;
+    static ProductCache& singleton() {
+        static ProductCache cache{};
+        return cache;
     }
 
     Product& get(const std::string& charset, const uint32_t repeat) {

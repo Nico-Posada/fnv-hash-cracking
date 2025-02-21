@@ -89,7 +89,7 @@ CrackStatus CrackUtils<OFFSET_BASIS, PRIME, BIT_LEN>::try_crack_single(
     using FNV_t = FNVUtil<BIT_LEN>;
     const uint64_t prefixed_hash = FNV_t::hash(prefix, OFFSET_BASIS, PRIME);
 
-    for (char* br : ProductManager::singleton().get(this->bruting_chars, brute)) {
+    for (char* br : ProductCache::singleton().get(this->bruting_chars, brute)) {
         // get the hash without the prefix applied
         const uint64_t new_hash = FNV_t::hash(br, prefixed_hash, PRIME);
 
@@ -149,7 +149,7 @@ CrackStatus CrackUtils<OFFSET_BASIS, PRIME, BIT_LEN>::try_crack_single(
             }
 
             if (success) {
-                const string possible_result = prefix + br + ret + suffix;
+                const std::string possible_result = prefix + br + ret + suffix;
 
                 // double check to confirm we have a valid hash. sometimes this can
                 // get false positives we need to ignore
