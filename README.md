@@ -46,6 +46,9 @@ More information on compilation and installation specifics can be found in the [
 # Examples
 To find examples for different use cases, check out the [examples](./examples/) directory for some files with basic examples.
 
+# Python Interface
+For ease of use with python, check out the example [here](./examples/python-interface/).
+
 # Tests and Benchmarks (WIP)
 To compile and run the test script, run the following 
 ```bash
@@ -56,11 +59,3 @@ To compile and run the benchmark script, run the following
 ```bash
 make run-benchmark
 ```
-
-# TODO
-- Clean up code, add more tests
-- Add multithreading support back in.
-- Maybe add a python module for this?
-- Benchmarks (WIP)
-- Add support for setting the hash/prime/bit len dynamically to make this into a proper CLI
-    * If this happens, maybe add JIT compilation for some speedup?
