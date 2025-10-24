@@ -1,2 +1,10 @@
-build/
 .vscode/
+__pycache__/
+build/
+ext/
+*.o
+
+# Nonstandard stuff I have for testing
+fnvcrack.egg-info/
+.gdb_history
+dbg_path.txt
