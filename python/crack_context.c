@@ -1,6 +1,14 @@
 #include "crack_context.h"
 #include "helpers.h"
 
+#ifdef FNVCRACK_PYTHON_EXTENSION
+#define FNVCRACK_BEGIN_ALLOW_THREADS Py_BEGIN_ALLOW_THREADS
+#define FNVCRACK_END_ALLOW_THREADS Py_END_ALLOW_THREADS
+#else
+#define FNVCRACK_BEGIN_ALLOW_THREADS
+#define FNVCRACK_END_ALLOW_THREADS
+#endif
+
 void
 CrackContext_dealloc(CrackContext* self) {
     destroy_crack_ctx(self->ctx);
@@ -110,11 +118,12 @@ CrackContext_new(PyTypeObject* type, PyObject* args, PyObject* kwds) {
     do { \
         PyObject* tmp = PyObject_CallMethod(arg, "bit_length", NULL); \
         if (tmp == NULL) goto fail_ints; \
-        int real_bit_len = PyLong_AsInt(tmp); \
+        long real_bit_len = PyLong_AsLong(tmp); \
         Py_DECREF(tmp); \
         if (real_bit_len == -1) goto fail_ints; \
+        if (real_bit_len < 0 || real_bit_len > UINT32_MAX) goto fail_ints; \
         if ((uint32_t)real_bit_len > bits) { \
-            PyErr_Format(PyExc_TypeError, #arg " must have a max bit length of %u (your bit_length arg). Got %R which has a bit length of %d", \
+            PyErr_Format(PyExc_TypeError, #arg " must have a max bit length of %u (your bit_length arg). Got %R which has a bit length of %ld", \
                      bits, arg, real_bit_len); goto fail_ints; } \
     } while (0)
 
@@ -200,9 +209,9 @@ fail_ints:
 
 fail_buffers:
     CLEAR_BUFFER_OBJ_SAFE(prefix_view);
-    CLEAR_BUFFER_OBJ_SAFE(prefix_view);
-    CLEAR_BUFFER_OBJ_SAFE(prefix_view);
-    CLEAR_BUFFER_OBJ_SAFE(prefix_view);
+    CLEAR_BUFFER_OBJ_SAFE(suffix_view);
+    CLEAR_BUFFER_OBJ_SAFE(valid_chars_view);
+    CLEAR_BUFFER_OBJ_SAFE(brute_chars_view);
 
     if (failed) {
         Py_DECREF(self);
@@ -350,17 +359,25 @@ PyObject*
 CrackContext_crack(CrackContext* self, PyObject *args, PyObject *kwds) {
     static char* kwlist[] = {
         "target",
-        "max_search_len",
+        "max_len",
         "max_crack_len",
+        "strategy",
+        "enum_bound",
+        "max_enum_candidates",
         NULL
     };
 
     PyObject* target = NULL,
-            * max_search_len = NULL,
-            * max_crack_len = NULL;
-    
-    if (!PyArg_ParseTupleAndKeywords(args, kwds, "OO|O", kwlist,
-                                     &target, &max_search_len, &max_crack_len)) {
+            * max_len_obj = NULL,
+            * max_crack_len_obj = NULL,
+            * strategy_obj = NULL,
+            * enum_bound_obj = NULL,
+            * max_enum_candidates_obj = NULL;
+
+    if (!PyArg_ParseTupleAndKeywords(args, kwds, "OOOOOO", kwlist,
+                                     &target, &max_len_obj, &max_crack_len_obj,
+                                     &strategy_obj, &enum_bound_obj,
+                                     &max_enum_candidates_obj)) {
         return NULL;
     }
 
@@ -371,43 +388,86 @@ CrackContext_crack(CrackContext* self, PyObject *args, PyObject *kwds) {
         return NULL;
     }
 
-    uint32_t max_len, max_crack;
-    if (!_parse_uint32_arg(max_search_len, &max_len, false, 0)) {
+    if (!PyLong_CheckExact(target)) {
+        PyErr_Format(PyExc_TypeError,
+                     "target must be an int, got '%.200s'",
+                     Py_TYPE(target)->tp_name);
         return NULL;
     }
 
-    // default is the highest brute for the given bits that should have a decently rare chance
-    // of generating a collision
-    if (!_parse_uint32_arg(max_crack_len, &max_crack, true, self->ctx->bits / 8)) {
+    uint32_t max_len, max_crack, strategy, enum_bound;
+    uint64_t max_enum_candidates;
+    if (!_parse_uint32_arg(max_len_obj, &max_len, false, 0)) {
         return NULL;
     }
+    if (!_parse_uint32_arg(max_crack_len_obj, &max_crack, false, 0)) {
+        return NULL;
+    }
+    if (!_parse_uint32_arg(strategy_obj, &strategy, false, 0)) {
+        return NULL;
+    }
+    if (strategy != CRACK_STRATEGY_LLL && strategy != CRACK_STRATEGY_ENUMERATE) {
+        PyErr_SetString(PyExc_ValueError, "strategy must be CRACK_STRATEGY_LLL or CRACK_STRATEGY_ENUMERATE");
+        return NULL;
+    }
+    if (!_parse_uint32_arg(enum_bound_obj, &enum_bound, false, CRACK_DEFAULT_ENUM_BOUND)) {
+        return NULL;
+    }
+    if (!_parse_uint64_arg(max_enum_candidates_obj, &max_enum_candidates, false, 0)) {
+        return NULL;
+    }
+
+    crack_options_t options = {
+        .strategy = (CrackStrategy)strategy,
+        .enum_bound = enum_bound,
+        .max_enum_candidates = max_enum_candidates,
+    };
 
     char_buffer output = { NULL, 0 };
     CrackResult crack_result;
+    fnvcrack_clear_interrupt();
+    if (fnvcrack_install_interrupt_handler() != 0) {
+        PyErr_SetString(CrackException, "Failed to install interrupt handler");
+        return NULL;
+    }
+
     if (self->ctx->uses_fmpz) {
         fmpz_t target_fmpz;
         fmpz_init(target_fmpz);
         if (!_pylong_to_fmpz(target_fmpz, target)) {
             fmpz_clear(target_fmpz);
+            fnvcrack_restore_interrupt_handler();
             return NULL;
         }
-        
-        crack_result = crack_fmpz(self->ctx, target_fmpz, &output, max_len, max_crack);
+
+        FNVCRACK_BEGIN_ALLOW_THREADS
+        crack_result = crack_fmpz_options(self->ctx, target_fmpz, &output, max_len, max_crack, &options);
+        FNVCRACK_END_ALLOW_THREADS
         fmpz_clear(target_fmpz);
     }
     else {
         uint64_t target_u64;
         target_u64 = PyLong_AsUnsignedLongLong(target);
         if (target_u64 == (uint64_t)-1 && PyErr_Occurred()) {
+            fnvcrack_restore_interrupt_handler();
             return NULL;
         }
 
-        crack_result = crack_u64(self->ctx, target_u64, &output, max_len, max_crack);
+        FNVCRACK_BEGIN_ALLOW_THREADS
+        crack_result = crack_u64_options(self->ctx, target_u64, &output, max_len, max_crack, &options);
+        FNVCRACK_END_ALLOW_THREADS
+    }
+    fnvcrack_restore_interrupt_handler();
+
+    if (crack_result == INTERRUPTED) {
+        clear_char_buffer(&output);
+        PyErr_SetNone(PyExc_KeyboardInterrupt);
+        return NULL;
     }
 
     PyObject* result;
     if ((int)crack_result >= 0) {
-        result = Py_BuildValue("(iy#)", crack_result, output.data, output.length);
+        result = Py_BuildValue("(iy#)", crack_result, output.data, (Py_ssize_t)output.length);
     }
     else {
         result = Py_BuildValue("(iO)", crack_result, Py_None);

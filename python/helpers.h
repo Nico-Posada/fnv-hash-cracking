@@ -79,6 +79,21 @@ _fix_ctx_pylong_arg(PyObject* obj, const char* const argname, uint64_t default_a
         return NULL;
     }
     else {
+        PyObject* zero = PyLong_FromLong(0);
+        if (zero == NULL) {
+            return NULL;
+        }
+
+        int is_negative = PyObject_RichCompareBool(obj, zero, Py_LT);
+        Py_DECREF(zero);
+        if (is_negative < 0) {
+            return NULL;
+        }
+        if (is_negative) {
+            PyErr_Format(PyExc_ValueError, "%s must be non-negative", argname);
+            return NULL;
+        }
+
         return Py_NewRef(obj);
     }
 }
@@ -126,3 +141,38 @@ _parse_uint32_arg(PyObject* obj, const char* const argname, uint32_t* result, bo
     return 1;
 }
 #define _parse_uint32_arg(obj, result, optional, default) _parse_uint32_arg(obj, #obj, result, optional, default)
+
+static int
+_parse_uint64_arg(PyObject* obj, const char* const argname, uint64_t* result, bool optional, uint64_t default_val) {
+    if (obj == NULL || Py_IsNone(obj)) {
+        if (!optional) {
+            if (Py_IsNone(obj)) {
+                goto bad_arg;
+            }
+
+            PyErr_Format(PyExc_TypeError,
+                         "Missing argument value for %s", argname);
+            return 0;
+        }
+
+        *result = default_val;
+        return 2;
+    }
+
+    if (!PyLong_CheckExact(obj)) {
+    bad_arg:
+        PyErr_Format(PyExc_TypeError,
+                     "%s must be an int, got '%.200s'",
+                     argname, Py_TYPE(obj)->tp_name);
+        return 0;
+    }
+
+    unsigned long long temp_val = PyLong_AsUnsignedLongLong(obj);
+    if (temp_val == (unsigned long long)-1 && PyErr_Occurred()) {
+        return 0;
+    }
+
+    *result = (uint64_t)temp_val;
+    return 1;
+}
+#define _parse_uint64_arg(obj, result, optional, default) _parse_uint64_arg(obj, #obj, result, optional, default)

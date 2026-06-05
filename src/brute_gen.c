@@ -1,4 +1,3 @@
-#include <stdio.h>
 #include <stddef.h>
 #include <stdlib.h>
 #include <string.h>
@@ -10,6 +9,7 @@ static const char* const _empty = "";
 // private
 typedef struct {
     const char* charset;
+    size_t charset_len;
     char* buf_ptr;
     char* cur_product;
     const uint32_t repeat;
@@ -23,31 +23,39 @@ void _generate(_gen_ctx* ctx, uint32_t depth) {
         return;
     }
 
-    char c;
-    for (int i = 0; (c = ctx->charset[i]) != 0; ++i) {
-        ctx->cur_product[depth] = c;
+    for (size_t i = 0; i < ctx->charset_len; ++i) {
+        ctx->cur_product[depth] = ctx->charset[i];
         _generate(ctx, depth + 1);
     }
 }
 
-void product(brute_chars_t* out, const char* brute_charset, size_t brute_charset_len, uint32_t repeat) {
+bool product(brute_chars_t* out, const char* brute_charset, size_t brute_charset_len, uint32_t repeat) {
+    out->buffer = NULL;
+    out->entry_length = 0;
+    out->total_entries = 0;
+
     if (!repeat || !brute_charset || brute_charset_len == 0) {
         out->buffer = (char*)_empty;
         out->entry_length = 0;
         out->total_entries = 1;
-        return;
+        return true;
     }
     
     size_t arr_size = 1;
     for (uint32_t i = 0; i < repeat; ++i) {
+        if (arr_size > SIZE_MAX / brute_charset_len) {
+            return false;
+        }
         arr_size *= brute_charset_len;
+    }
+
+    if (arr_size > SIZE_MAX / repeat) {
+        return false;
     }
 
     char* ret_product = malloc(arr_size * repeat);
     if (!ret_product) {
-        fprintf(stderr, "FATAL: Out of memory when generating product "
-                        "with charset \"%s\" and repeat=%u\n", brute_charset, repeat);
-        exit(2);
+        return false;
     }
 
     char cur_product[repeat+1];
@@ -55,6 +63,7 @@ void product(brute_chars_t* out, const char* brute_charset, size_t brute_charset
 
     _gen_ctx ctx = {
         .charset = brute_charset,
+        .charset_len = brute_charset_len,
         .buf_ptr = ret_product,
         .cur_product = cur_product,
         .repeat = repeat,
@@ -65,6 +74,7 @@ void product(brute_chars_t* out, const char* brute_charset, size_t brute_charset
     out->buffer = ret_product;
     out->entry_length = repeat;
     out->total_entries = arr_size;
+    return true;
 }
 
 void destroy_product(brute_chars_t* out) {

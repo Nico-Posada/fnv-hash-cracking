@@ -1,5 +1,8 @@
 #pragma once
 #include <stddef.h>
+#ifndef PY_SSIZE_T_CLEAN
+#define PY_SSIZE_T_CLEAN
+#endif
 #include <Python.h>
 #include "crack.h"
 
@@ -9,8 +12,8 @@ typedef struct {
     context_t ctx;
 } CrackContext;
 
-static PyTypeObject CrackContextType;
-static PyObject* CrackException;
+extern PyTypeObject CrackContextType;
+extern PyObject* CrackException;
 
 int CrackContext_traverse(CrackContext* self, visitproc visit, void* arg);
 void CrackContext_dealloc(CrackContext* self);

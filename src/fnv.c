@@ -49,7 +49,7 @@ void fnv_fmpz_with_len(
     for (size_t i = 0; i < data_len; ++i) {
         // since fmpz values are normal ints until the number becomes larger than 2**62, we can
         // get away with making this fake fmpz value
-        fmpz_set_ui(cur_char, (ulong)data[i]);
+        fmpz_set_ui(cur_char, (ulong)(uint8_t)data[i]);
         fmpz_xor(hash, hash, cur_char);
         fmpz_mul(hash, hash, prime);
         fmpz_and(hash, hash, mask);

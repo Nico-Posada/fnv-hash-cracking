@@ -113,9 +113,17 @@ void run_64_bit_unk() {
 
 int main()
 {
-    run_64_bit_crack();
-    run_320_bit_crack();
-    run_64_bit_unk();
+    fnvcrack_clear_interrupt();
+    fnvcrack_install_interrupt_handler();
 
-    return 1;
+    run_64_bit_crack();
+    if (!fnvcrack_interrupted()) {
+        run_320_bit_crack();
+    }
+    if (!fnvcrack_interrupted()) {
+        run_64_bit_unk();
+    }
+
+    fnvcrack_restore_interrupt_handler();
+    return fnvcrack_interrupted() ? 130 : 0;
 }

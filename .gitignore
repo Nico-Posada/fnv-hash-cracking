@@ -2,9 +2,14 @@
 __pycache__/
 build/
 ext/
+.pytest_cache/
+.venv/
 *.o
+*.so
+.codex/
 
 # Nonstandard stuff I have for testing
-fnvcrack.egg-info/
+*.egg-info/
 .gdb_history
 dbg_path.txt
+benchmarking/

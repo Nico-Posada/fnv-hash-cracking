@@ -1,5 +1,8 @@
 #include <stdio.h>
 
+#ifndef PY_SSIZE_T_CLEAN
+#define PY_SSIZE_T_CLEAN
+#endif
 #include <Python.h>
 #include <flint/fmpz.h>
 
@@ -38,9 +41,9 @@ static PyMethodDef CrackContext_methods[] = {
     {NULL}  /* Sentinel */
 };
 
-static PyTypeObject CrackContextType = {
+PyTypeObject CrackContextType = {
     .ob_base = PyVarObject_HEAD_INIT(NULL, 0)
-    .tp_name = "fnvcrack.CrackContext",
+    .tp_name = "fnvcrack._fnvcrack.NativeContext",
     .tp_doc = PyDoc_STR("Context used for the hash cracking process."),
     .tp_basicsize = sizeof(CrackContext),
     .tp_itemsize = 0,
@@ -65,17 +68,19 @@ static PyMethodDef module_methods[] = {
 
 static struct PyModuleDef fnvcrack_module = {
     PyModuleDef_HEAD_INIT,
-    "fnvcrack",
-    "A simple C extension module",
+    "fnvcrack._fnvcrack",
+    "Native FNV crack bindings",
     -1,
     module_methods
 };
+
+PyObject* CrackException;
 
 /////////////////////////
 // Initialization func //
 /////////////////////////
 
-PyMODINIT_FUNC PyInit_fnvcrack(void) {
+PyMODINIT_FUNC PyInit__fnvcrack(void) {
     if (PyType_Ready(&CrackContextType) < 0)
         return NULL;
 
@@ -83,27 +88,33 @@ PyMODINIT_FUNC PyInit_fnvcrack(void) {
     if (m == NULL)
         return NULL;
 
-    CrackException = PyErr_NewException("fnvcrack.CrackException", NULL, NULL);
+    CrackException = PyErr_NewException("fnvcrack.CrackError", NULL, NULL);
     if (CrackException == NULL) {
         Py_DECREF(m);
         return NULL;
     }
     
     Py_INCREF(CrackException);
-    if (PyModule_AddObject(m, "CrackException", CrackException) < 0) {
+    if (PyModule_AddObject(m, "CrackError", CrackException) < 0) {
         Py_DECREF(CrackException);
         Py_DECREF(m);
         return NULL;
     }
     
-    if (PyModule_AddObjectRef(m, "CrackContext", (PyObject*)&CrackContextType) < 0) {
+    if (PyModule_AddObjectRef(m, "NativeContext", (PyObject*)&CrackContextType) < 0) {
         Py_DECREF(m);
         return NULL;
     }
 
     PyObject* version = PyUnicode_FromString(FNVCRACK_VERSION);
-    if (PyModule_Add(m, "__version__", version) < 0) {
+    if (version == NULL) {
         Py_DECREF(m);
+        return NULL;
+    }
+
+    if (PyModule_AddObject(m, "__version__", version) < 0) {
+        Py_DECREF(m);
+        Py_DECREF(version);
         return NULL;
     }
 
