@@ -86,12 +86,14 @@ CrackContext_new(PyTypeObject* type, PyObject* args, PyObject* kwds) {
     
     uint32_t bits;
     if (!_parse_uint32_arg(bit_length, &bits, true, 64)) {
+        Py_DECREF(self);
         return NULL;
     }
 
     if (bits == 0) {
         PyErr_SetString(PyExc_ValueError,
                      "bit_length should be a non-zero value.");
+        Py_DECREF(self);
         return NULL;
     }
 
@@ -131,6 +133,9 @@ CrackContext_new(PyTypeObject* type, PyObject* args, PyObject* kwds) {
     ENSURE_BIT_SIZE(new_offset_basis);
     ENSURE_BIT_SIZE(new_prime);
 #undef ENSURE_BIT_SIZE
+    if (!_ensure_odd_pylong_arg(new_prime, "prime")) {
+        goto fail_ints;
+    }
 
 // these vars were created in the GET_BUFFER_OBJ_SAFE macro
 #define BUFFER_ARG(arg) \
@@ -394,6 +399,9 @@ CrackContext_crack(CrackContext* self, PyObject *args, PyObject *kwds) {
                      Py_TYPE(target)->tp_name);
         return NULL;
     }
+    if (!_ensure_uint_pylong_arg_fits(target, self->ctx->bits)) {
+        return NULL;
+    }
 
     uint32_t max_len, max_crack, strategy, enum_bound;
     uint64_t max_enum_candidates;
@@ -414,6 +422,12 @@ CrackContext_crack(CrackContext* self, PyObject *args, PyObject *kwds) {
         return NULL;
     }
     if (!_parse_uint64_arg(max_enum_candidates_obj, &max_enum_candidates, false, 0)) {
+        return NULL;
+    }
+    const size_t known_len = get_prefix(self->ctx)->length + get_suffix(self->ctx)->length;
+    if (known_len > UINT32_MAX || (uint64_t)max_len + (uint64_t)known_len > UINT32_MAX) {
+        PyErr_SetString(PyExc_OverflowError,
+                        "max_len plus prefix and suffix lengths must fit in uint32");
         return NULL;
     }
 

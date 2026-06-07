@@ -99,6 +99,64 @@ _fix_ctx_pylong_arg(PyObject* obj, const char* const argname, uint64_t default_a
 }
 #define _fix_ctx_pylong_arg(obj, default_arg) _fix_ctx_pylong_arg(obj, #obj, default_arg)
 
+inline static bool
+_ensure_odd_pylong_arg(PyObject* obj, const char* const argname) {
+    const unsigned long long low_bits = PyLong_AsUnsignedLongLongMask(obj);
+    if (PyErr_Occurred()) {
+        return false;
+    }
+
+    if ((low_bits & 1) == 0) {
+        PyErr_Format(PyExc_ValueError, "%s must be odd", argname);
+        return false;
+    }
+
+    return true;
+}
+
+inline static bool
+_ensure_uint_pylong_arg_fits(PyObject* obj, const char* const argname, uint32_t bits) {
+    PyObject* zero = PyLong_FromLong(0);
+    if (zero == NULL) {
+        return false;
+    }
+
+    int is_negative = PyObject_RichCompareBool(obj, zero, Py_LT);
+    Py_DECREF(zero);
+    if (is_negative < 0) {
+        return false;
+    }
+    if (is_negative) {
+        PyErr_Format(PyExc_ValueError, "%s must be non-negative", argname);
+        return false;
+    }
+
+    PyObject* bit_length = PyObject_CallMethod(obj, "bit_length", NULL);
+    if (bit_length == NULL) {
+        return false;
+    }
+
+    PyObject* max_bits = PyLong_FromUnsignedLong(bits);
+    if (max_bits == NULL) {
+        Py_DECREF(bit_length);
+        return false;
+    }
+
+    int too_large = PyObject_RichCompareBool(bit_length, max_bits, Py_GT);
+    Py_DECREF(max_bits);
+    Py_DECREF(bit_length);
+    if (too_large < 0) {
+        return false;
+    }
+    if (too_large) {
+        PyErr_Format(PyExc_OverflowError, "%s must fit in uint%u", argname, bits);
+        return false;
+    }
+
+    return true;
+}
+#define _ensure_uint_pylong_arg_fits(obj, bits) _ensure_uint_pylong_arg_fits(obj, #obj, bits)
+
 static int
 _parse_uint32_arg(PyObject* obj, const char* const argname, uint32_t* result, bool optional, uint32_t default_val) {
     if (obj == NULL || Py_IsNone(obj)) {

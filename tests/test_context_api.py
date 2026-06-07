@@ -127,6 +127,16 @@ class ContextApiTestCase(unittest.TestCase):
         with self.assertRaises(ValueError):
             CrackContext(prime=-1, bit_length=128)
 
+    def test_rejects_non_invertible_prime(self):
+        with self.assertRaisesRegex(ValueError, "prime"):
+            CrackContext(prime=0)
+
+        with self.assertRaisesRegex(ValueError, "prime"):
+            CrackContext(prime=2)
+
+        with self.assertRaisesRegex(ValueError, "prime"):
+            CrackContext(prime=2, bit_length=128)
+
     def test_large_fmpz_properties_round_trip(self):
         offset_basis = (1 << 1024) + 0x12345
         prime = (1 << 1023) + 0x1b3

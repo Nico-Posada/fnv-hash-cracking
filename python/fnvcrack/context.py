@@ -68,6 +68,8 @@ class CrackContext:
 
         target = check_uint("target", target, self.bit_length)
         max_len = check_uint("max_len", max_len, 32)
+        if max_len + len(self.prefix) + len(self.suffix) > (1 << 32) - 1:
+            raise OverflowError("max_len plus prefix and suffix lengths must fit in uint32")
         normalized = normalize_options(options)
         max_crack_len = (
             self.bit_length // 8

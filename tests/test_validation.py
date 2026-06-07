@@ -34,6 +34,9 @@ class ValidationTestCase(unittest.TestCase):
         with self.assertRaisesRegex(TypeError, "must be an int"):
             check_uint("x", "1", 32)
 
+        with self.assertRaisesRegex(TypeError, "must be an int"):
+            check_uint("x", True, 32)
+
         with self.assertRaisesRegex(ValueError, "must be non-negative"):
             check_uint("x", -1, 32)
 
@@ -109,6 +112,9 @@ class ValidationTestCase(unittest.TestCase):
         with self.assertRaisesRegex(OverflowError, "max_len"):
             ctx.crack(0, max_len=2**32)
 
+        with self.assertRaisesRegex(OverflowError, "max_len"):
+            CrackContext(prefix=b"x").crack(0, max_len=2**32 - 1)
+
         with self.assertRaisesRegex(ValueError, "target"):
             ctx.crack(-1, max_len=8)
 
@@ -133,3 +139,20 @@ class ValidationTestCase(unittest.TestCase):
 
         with self.assertRaises(ValueError):
             ctx._native.crack(0, 8, 8, 99, 4, 0)
+
+    def test_native_method_validates_target_range(self):
+        small_ctx = CrackContext(bit_length=8, offset_basis=0, prime=1)
+        with self.assertRaisesRegex(OverflowError, "target"):
+            small_ctx._native.crack(256, 1, 1, 0, 4, 0)
+
+        fmpz_ctx = CrackContext(bit_length=128)
+        with self.assertRaisesRegex(ValueError, "target"):
+            fmpz_ctx._native.crack(-1, 1, 1, 0, 4, 0)
+
+        with self.assertRaisesRegex(OverflowError, "target"):
+            fmpz_ctx._native.crack(2**128, 1, 1, 0, 4, 0)
+
+    def test_native_method_rejects_total_length_overflow(self):
+        ctx = CrackContext(prefix=b"x")
+        with self.assertRaisesRegex(OverflowError, "max_len"):
+            ctx._native.crack(0, 2**32 - 1, 8, 0, 4, 0)

@@ -42,12 +42,11 @@ def native_strategy(strategy: CrackStrategy) -> int:
 
 
 def check_uint(name: str, value: int, bits: int) -> int:
-    if not isinstance(value, int):
+    if type(value) is not int:
         raise TypeError(f"{name} must be an int")
     if value < 0:
         raise ValueError(f"{name} must be non-negative")
-    max_value = (1 << bits) - 1
-    if value > max_value:
+    if value.bit_length() > bits:
         raise OverflowError(f"{name} must fit in uint{bits}")
     return value
 
