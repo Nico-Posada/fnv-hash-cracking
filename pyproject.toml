@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "fnvcrack"
-version = "2.0"
+version = "3.0.0"
 description = "A high-performance FNV hash cracking library"
 readme = "python/README.md"
 requires-python = ">=3.11"
@@ -16,3 +16,37 @@ dev = ["pytest"]
 testpaths = ["tests"]
 python_files = ["test_*.py"]
 python_classes = ["*TestCase"]
+
+[tool.bumpversion]
+parse = "(?P<major>\\d+)\\.(?P<minor>\\d+)\\.(?P<patch>\\d+)"
+serialize = ["{major}.{minor}.{patch}"]
+
+[[tool.bumpversion.files]]
+filename = "python/fnvcrack.c"
+search = '#define FNVCRACK_VERSION "{current_version}"'
+replace = '#define FNVCRACK_VERSION "{new_version}"'
+
+[[tool.bumpversion.files]]
+filename = "uv.lock"
+search = '''name = "fnvcrack"
+version = "{current_version}"'''
+replace = '''name = "fnvcrack"
+version = "{new_version}"'''
+
+[tool.cibuildwheel]
+build = "cp311-manylinux_x86_64 cp312-manylinux_x86_64 cp313-manylinux_x86_64 cp314-manylinux_x86_64"
+build-frontend = "build[uv]"
+test-requires = ["pytest"]
+test-command = "python -m pytest {project}/tests"
+
+[tool.cibuildwheel.linux]
+archs = ["x86_64"]
+manylinux-x86_64-image = "manylinux_2_28"
+before-all = "bash {project}/scripts/build-manylinux-deps.sh"
+repair-wheel-command = "auditwheel repair --plat manylinux_2_28_x86_64 --lib-sdir .libs -w {dest_dir} {wheel}"
+
+[tool.cibuildwheel.linux.environment]
+FNVCRACK_DEPS = "/opt/fnvcrack-deps"
+LDFLAGS = "-L/opt/fnvcrack-deps/lib"
+LD_LIBRARY_PATH = "/opt/fnvcrack-deps/lib"
+PKG_CONFIG_PATH = "/opt/fnvcrack-deps/lib/pkgconfig"

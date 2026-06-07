@@ -1,12 +1,14 @@
 .vscode/
 __pycache__/
 build/
+dist/
 ext/
 .pytest_cache/
 .venv/
 *.o
 *.so
 .codex/
+AGENTS.md
 
 # Nonstandard stuff I have for testing
 *.egg-info/

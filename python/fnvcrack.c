@@ -14,7 +14,7 @@
 
 #include "crack_context.h"
 
-#define FNVCRACK_VERSION "2.0"
+#define FNVCRACK_VERSION "3.0.0"
 
 //////////////////
 // CrackContext //
