@@ -4,10 +4,24 @@ from .result import CrackResult
 
 
 FNV64_OFFSET_BASIS = 0xcbf29ce484222325
+"""Default 64-bit FNV-1a offset basis."""
+
 FNV64_PRIME = 0x100000001b3
+"""Default 64-bit FNV-1a prime."""
 
 
 class CrackContext:
+    """Configuration for cracking FNV-1a hashes.
+
+    :param offset_basis: Initial FNV hash state.
+    :param prime: FNV prime multiplier. Must be odd.
+    :param bit_length: Number of hash bits to use.
+    :param valid_chars: Bytes allowed in cracked output. ``None`` allows all bytes.
+    :param brute_chars: Bytes used when brute forcing part of the unknown input.
+    :param prefix: Known bytes at the beginning of the input.
+    :param suffix: Known bytes at the end of the input.
+    """
+
     def __init__(
         self,
         *,
@@ -31,30 +45,37 @@ class CrackContext:
 
     @property
     def offset_basis(self) -> int:
+        """Initial FNV hash state used by this context."""
         return self._native.offset_basis
 
     @property
     def prime(self) -> int:
+        """FNV prime multiplier used by this context."""
         return self._native.prime
 
     @property
     def bit_length(self) -> int:
+        """Number of hash bits used by this context."""
         return self._native.bit_length
 
     @property
     def prefix(self) -> bytes:
+        """Known bytes prepended to candidate inputs."""
         return self._native.prefix
 
     @property
     def suffix(self) -> bytes:
+        """Known bytes appended to candidate inputs."""
         return self._native.suffix
 
     @property
     def valid_chars(self) -> bytes:
+        """Bytes allowed in cracked output."""
         return self._native.valid_chars
 
     @property
     def brute_chars(self) -> bytes:
+        """Bytes used for brute force portions of a search."""
         return self._native.brute_chars
 
     def crack(
@@ -63,6 +84,16 @@ class CrackContext:
         max_len: int,
         options: CrackOptions | None = None,
     ) -> CrackResult:
+        """Try to find an input whose FNV-1a hash matches ``target``.
+
+        :param target: Hash value to crack.
+        :param max_len: Maximum number of unknown bytes to search.
+        :param options: Optional cracking strategy and search limits.
+        :returns: The crack status and value, if one was found.
+        :raises TypeError: If arguments have invalid types.
+        :raises ValueError: If integer arguments are negative.
+        :raises OverflowError: If integer arguments do not fit native limits.
+        """
         if not isinstance(target, int):
             raise TypeError("target must be an int")
 
@@ -88,16 +119,7 @@ class CrackContext:
         return CrackResult(status=status, value=value)
 
     def __repr__(self) -> str:
-        return (
-            f"{type(self).__name__}("
-            f"prime={self.prime!r}, "
-            f"offset_basis={self.offset_basis!r}, "
-            f"bit_length={self.bit_length!r}, "
-            f"prefix={self.prefix!r}, "
-            f"suffix={self.suffix!r}, "
-            f"valid_chars={self.valid_chars!r}, "
-            f"brute_chars={self.brute_chars!r})"
-        )
+        return repr(self._native)
 
     def __eq__(self, other: object) -> bool:
         if not isinstance(other, CrackContext):

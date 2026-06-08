@@ -93,14 +93,14 @@ PyMODINIT_FUNC PyInit__fnvcrack(void) {
         Py_DECREF(m);
         return NULL;
     }
-    
+
     Py_INCREF(CrackException);
     if (PyModule_AddObject(m, "CrackError", CrackException) < 0) {
         Py_DECREF(CrackException);
         Py_DECREF(m);
         return NULL;
     }
-    
+
     if (PyModule_AddObjectRef(m, "NativeContext", (PyObject*)&CrackContextType) < 0) {
         Py_DECREF(m);
         return NULL;

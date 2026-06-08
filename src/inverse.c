@@ -4,7 +4,7 @@
 
 uint64_t _mulmod(uint64_t a, uint64_t b, uint64_t m) {
     uint64_t res = 0;
-    
+
     while (a != 0) {
         if (a & 1) res = (res + b) % m;
         a >>= 1;
@@ -19,7 +19,7 @@ uint64_t _2pow64modn(uint64_t n) {
         fprintf(stderr, "FATAL: Modulus by 0 in _2pow64modn\n");
         exit(2);
     }
-    
+
     uint64_t result = 1;
     uint64_t base = 2;
     int64_t exp = 64;
@@ -62,10 +62,10 @@ void _gcd_extended(uint64_t out_vals[2], uint64_t a, uint64_t b) {
         out_vals[1] = 1;
         return;
     }
-    
+
     uint64_t new_vals[2];
     _gcd_extended(new_vals, b % a, a);
-    
+
     out_vals[0] = new_vals[1] - (b / a) * new_vals[0];
     out_vals[1] = new_vals[0];
 }
@@ -110,7 +110,7 @@ void _gcd_extended_fmpz(fmpz out_vals[2], const fmpz_t a, const fmpz_t b) {
     fmpz_set(&out_vals[0], tmp);
     // y = x1
     fmpz_set(&out_vals[1], &new_vals[0]);
-    
+
     fmpz_clear(&new_vals[0]);
     fmpz_clear(&new_vals[1]);
     fmpz_clear(tmp);

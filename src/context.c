@@ -20,7 +20,7 @@ bool _init_common(
         !set_suffix(ctx, suffix, suffix_len) ||
         !set_brute_chars(ctx, brute_chars, brute_chars_len))
         return false;
-    
+
     set_valid_chars(ctx, valid_chars, valid_chars_len);
     ctx->bits = bits;
     return true;
@@ -160,7 +160,7 @@ inline bool _set_str_ref(char_buffer* ref, const char* str, size_t str_length) {
         ref->data = NULL;
         ref->length = 0;
     }
-    
+
     if (str == NULL || str_length == 0) {
         ref->data = NULL;
         ref->length = 0;

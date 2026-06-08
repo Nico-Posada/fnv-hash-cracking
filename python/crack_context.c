@@ -83,7 +83,7 @@ CrackContext_new(PyTypeObject* type, PyObject* args, PyObject* kwds) {
         Py_DECREF(self);
         return NULL;
     }
-    
+
     uint32_t bits;
     if (!_parse_uint32_arg(bit_length, &bits, true, 64)) {
         Py_DECREF(self);
@@ -98,7 +98,7 @@ CrackContext_new(PyTypeObject* type, PyObject* args, PyObject* kwds) {
     }
 
     self->ctx->bits = bits;
-    
+
     // normalize all buffer args
     Py_buffer prefix_view = {NULL};
     Py_buffer suffix_view = {NULL};
@@ -115,7 +115,7 @@ CrackContext_new(PyTypeObject* type, PyObject* args, PyObject* kwds) {
     if (new_offset_basis == NULL) goto fail_ints;
     new_prime = _fix_ctx_pylong_arg(prime, 0x00000100000001b3);
     if (new_prime == NULL) goto fail_ints;
-    
+
 #define ENSURE_BIT_SIZE(arg) \
     do { \
         PyObject* tmp = PyObject_CallMethod(arg, "bit_length", NULL); \
@@ -259,7 +259,7 @@ PyObject*
 CrackContext_get_valid_chars(CrackContext *self, PyObject *Py_UNUSED(ignored)) {
     uint32_t bytes_needed = 0;
     uint8_t result[256];
-    
+
     for (uint32_t i = 0; i < 256; ++i) {
         if (self->ctx->valid_chars[i] == 1) {
             result[bytes_needed++] = i;
@@ -321,7 +321,7 @@ CrackContext_repr(CrackContext* self) {
             * suffix = NULL,
             * valid_chars = NULL,
             * brute_chars = NULL;
-    
+
     PyObject* result = NULL;
     prime = CrackContext_get_prime(self, NULL);
     if (!prime) goto finish;
@@ -337,9 +337,8 @@ CrackContext_repr(CrackContext* self) {
     if (!brute_chars) goto finish;
 
     result = PyUnicode_FromFormat(
-        "%s(prime=%R, offset_basis=%R, bit_length=%u, prefix=%R, "
+        "CrackContext(prime=%R, offset_basis=%R, bit_length=%u, prefix=%R, "
         "suffix=%R, valid_chars=%R, brute_chars=%R)",
-        Py_TYPE(self)->tp_name,
         prime,
         offset_basis,
         self->ctx->bits,

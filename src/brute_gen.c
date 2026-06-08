@@ -16,7 +16,7 @@ bool product(brute_chars_t* out, const char* brute_charset, size_t brute_charset
         out->total_entries = 1;
         return true;
     }
-    
+
     size_t arr_size = 1;
     for (uint32_t i = 0; i < repeat; ++i) {
         if (arr_size > SIZE_MAX / brute_charset_len) {
@@ -54,7 +54,7 @@ void destroy_product(brute_chars_t* out) {
         free((void*)out->buffer);
         out->buffer = NULL;
     }
-    
+
     out->entry_length = 0;
     out->total_entries = 0;
 }

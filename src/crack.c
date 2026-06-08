@@ -861,7 +861,7 @@ static CrackResult _crack_u64_with_len_lll(
     register const char* prefix = get_prefix(ctx)->data; if (!prefix) prefix = "";
     register const char* suffix = get_suffix(ctx)->data; if (!suffix) suffix = "";
     char_buffer* brute_chars = get_brute_chars(ctx);
-    
+
     fmpz_t MOD; fmpz_init(MOD);
     if (bit_len == 64) {
         fmpz_set_uiui(MOD, /*hi =*/(ulong)1, /*lo =*/(ulong)0); // 2 ^ 64
@@ -888,7 +888,7 @@ static CrackResult _crack_u64_with_len_lll(
     // TODO: allow the user to customize the weights
     uint64_t Q[dim];
     _init_weights(Q, dim, 12, 4, 10);
-    
+
     // identity matrix but with an extra column on the left and extra row on the bottom
     fmpz_mat_t _M;
     fmpz_mat_init(_M, dim, dim);
@@ -1041,7 +1041,7 @@ static CrackResult _crack_fmpz_with_len_lll(
     const char* prefix = get_prefix(ctx)->data; if (!prefix) prefix = "";
     const char* suffix = get_suffix(ctx)->data; if (!suffix) suffix = "";
     char_buffer* brute_chars = get_brute_chars(ctx);
-    
+
     fmpz_t MOD; fmpz_init(MOD);
     fmpz_ui_pow_ui(MOD, 2, bit_len);
 
@@ -1066,7 +1066,7 @@ static CrackResult _crack_fmpz_with_len_lll(
     // TODO: allow the user to customize the weights
     uint64_t Q[dim];
     _init_weights(Q, dim, 12, 4, 10);
-    
+
     // identity matrix but with an extra column on the left and extra row on the bottom
     fmpz_mat_t _M;
     fmpz_mat_init(_M, dim, dim);
@@ -1277,7 +1277,7 @@ CrackResult crack_fmpz_with_len(
 CrackResult crack_u64_options(
     context_t ctx,
     const uint64_t target,
-    char_buffer* out_buffer, 
+    char_buffer* out_buffer,
     const uint32_t max_search_len,
     const uint64_t max_crack_len,
     const crack_options_t* options

@@ -9,6 +9,7 @@ ext/
 *.so
 .codex/
 AGENTS.md
+.mypy_cache/
 
 # Nonstandard stuff I have for testing
 *.egg-info/

@@ -173,7 +173,7 @@ _parse_uint32_arg(PyObject* obj, const char* const argname, uint32_t* result, bo
         *result = default_val;
         return 2;
     }
-    
+
     if (!PyLong_CheckExact(obj)) {
     bad_arg:
         PyErr_Format(PyExc_TypeError,
@@ -181,7 +181,7 @@ _parse_uint32_arg(PyObject* obj, const char* const argname, uint32_t* result, bo
                      argname, Py_TYPE(obj)->tp_name);
         return 0;
     }
-    
+
     long temp_val = PyLong_AsLong(obj);
     if (temp_val == -1 && PyErr_Occurred()) {
         return 0;
@@ -194,7 +194,7 @@ _parse_uint32_arg(PyObject* obj, const char* const argname, uint32_t* result, bo
         PyErr_Format(PyExc_OverflowError, "%s too large", argname);
         return 0;
     }
-    
+
     *result = (uint32_t)temp_val;
     return 1;
 }

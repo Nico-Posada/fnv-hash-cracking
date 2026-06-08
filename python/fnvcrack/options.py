@@ -3,12 +3,20 @@ from enum import IntEnum, StrEnum
 
 
 DEFAULT_ENUM_BOUND = 4
+"""Default local enumeration radius for the enumerate strategy."""
+
 DEFAULT_MAX_ENUM_CANDIDATES = 0
+"""Default candidate limit for enumeration. ``0`` means unlimited."""
 
 
 class CrackStrategy(StrEnum):
+    """Available cracking strategies."""
+
     LLL = "lll"
+    """Use the LLL-based lattice strategy."""
+
     ENUMERATE = "enumerate"
+    """Use bounded enumeration around the lattice solution."""
 
 
 class _NativeStrategy(IntEnum):
@@ -18,6 +26,15 @@ class _NativeStrategy(IntEnum):
 
 @dataclass(frozen=True, slots=True)
 class CrackOptions:
+    """Options passed to :meth:`fnvcrack.CrackContext.crack`.
+
+    :ivar strategy: Cracking strategy to use.
+    :ivar enum_bound: Search radius for the enumerate strategy.
+    :ivar max_enum_candidates: Maximum enumeration candidates. ``0`` means unlimited.
+    :ivar max_crack_len: Maximum bytes solved without brute force. ``None`` uses
+        ``bit_length // 8``.
+    """
+
     strategy: CrackStrategy = CrackStrategy.LLL
     enum_bound: int = DEFAULT_ENUM_BOUND
     max_enum_candidates: int = DEFAULT_MAX_ENUM_CANDIDATES
@@ -25,6 +42,12 @@ class CrackOptions:
 
 
 def normalize_strategy(strategy: CrackStrategy | str) -> CrackStrategy:
+    """Convert a strategy string or enum value to :class:`CrackStrategy`.
+
+    :param strategy: Strategy value or string name.
+    :returns: Normalized strategy enum value.
+    :raises ValueError: If the strategy is unknown.
+    """
     if isinstance(strategy, CrackStrategy):
         return strategy
     if isinstance(strategy, str):
@@ -36,12 +59,27 @@ def normalize_strategy(strategy: CrackStrategy | str) -> CrackStrategy:
 
 
 def native_strategy(strategy: CrackStrategy) -> int:
+    """Return the native integer value for a crack strategy.
+
+    :param strategy: Strategy enum value.
+    :returns: Integer strategy id expected by the native extension.
+    """
     if strategy == CrackStrategy.LLL:
         return int(_NativeStrategy.LLL)
     return int(_NativeStrategy.ENUMERATE)
 
 
 def check_uint(name: str, value: int, bits: int) -> int:
+    """Validate that ``value`` fits an unsigned integer width.
+
+    :param name: Argument name used in error messages.
+    :param value: Value to validate.
+    :param bits: Unsigned integer width in bits.
+    :returns: The validated value.
+    :raises TypeError: If ``value`` is not an exact ``int``.
+    :raises ValueError: If ``value`` is negative.
+    :raises OverflowError: If ``value`` is too large.
+    """
     if type(value) is not int:
         raise TypeError(f"{name} must be an int")
     if value < 0:
@@ -52,6 +90,14 @@ def check_uint(name: str, value: int, bits: int) -> int:
 
 
 def normalize_options(options: CrackOptions | None) -> CrackOptions:
+    """Return validated crack options with defaults applied.
+
+    :param options: Options to validate, or ``None`` for defaults.
+    :returns: A normalized :class:`CrackOptions` instance.
+    :raises TypeError: If ``options`` is not a :class:`CrackOptions` instance.
+    :raises ValueError: If an option has an invalid value.
+    :raises OverflowError: If an option does not fit native limits.
+    """
     if options is None:
         return CrackOptions()
     if not isinstance(options, CrackOptions):
