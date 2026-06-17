@@ -15,7 +15,7 @@ HEADERS = $(wildcard src/*.h)
 OBJECTS = $(SOURCES:.c=.o)
 
 # Default target (runs when you just type 'make')
-.PHONY: all build clean
+.PHONY: all build clean build-pyext
 
 all: build
 
@@ -32,3 +32,6 @@ $(TARGET): $(OBJECTS)
 # Clean up generated files
 clean:
 	rm -f $(OBJECTS) $(TARGET)
+
+build-pyext:
+	uv run --with setuptools --with wheel python setup.py build_ext --inplace --force

@@ -90,6 +90,24 @@ class CrackingStrategiesTestCase(CrackAssertionsMixin, unittest.TestCase):
         self.assertEqual(result.value, plaintext)
         self.assertCracked(result, target, ctx)
 
+    def test_enumerate_preserves_nul_bytes_in_known_parts(self):
+        prefix = b"pre\x00"
+        suffix = b"\x00suf"
+        plaintext = prefix + b"abcd" + suffix
+        target = fnv(plaintext)
+        ctx = CrackContext(
+            prefix=prefix,
+            suffix=suffix,
+            valid_chars=LOWER,
+        )
+        result = ctx.crack(
+            target,
+            max_len=4,
+            options=CrackOptions(strategy=CrackStrategy.ENUMERATE),
+        )
+        self.assertEqual(result.value, plaintext)
+        self.assertCracked(result, target, ctx)
+
     def test_lll_with_prefix_suffix_and_bruteforce(self):
         plaintext = b"preaaabcdefghsuf"
         target = fnv(plaintext)
@@ -104,6 +122,16 @@ class CrackingStrategiesTestCase(CrackAssertionsMixin, unittest.TestCase):
             max_len=12,
             options=CrackOptions(max_crack_len=8),
         )
+        self.assertCracked(result, target, ctx)
+
+    def test_lll_exact_known_string_preserves_nul_bytes(self):
+        prefix = b"pre\x00"
+        suffix = b"\x00suf"
+        plaintext = prefix + suffix
+        target = fnv(plaintext)
+        ctx = CrackContext(prefix=prefix, suffix=suffix)
+        result = ctx.crack(target, max_len=0)
+        self.assertEqual(result.value, plaintext)
         self.assertCracked(result, target, ctx)
 
     def test_enumerate_bruteforce_accepts_nul_bytes(self):
@@ -319,6 +347,28 @@ class CrackingStrategiesTestCase(CrackAssertionsMixin, unittest.TestCase):
             target,
             max_len=8,
             options=CrackOptions(strategy=CrackStrategy.ENUMERATE),
+        )
+        self.assertEqual(result.value, plaintext)
+        self.assertCracked(result, target, ctx)
+
+    def test_fmpz_exact_known_string_preserves_nul_bytes(self):
+        prefix = b"\x00pre"
+        suffix = b"suf\x00"
+        plaintext = prefix + suffix
+        offset_basis = int("6c62272e07bb014262b821756295c58d", 16)
+        prime = int("0000000001000000000000000000013b", 16)
+        ctx = CrackContext(
+            offset_basis=offset_basis,
+            prime=prime,
+            bit_length=128,
+            prefix=prefix,
+            suffix=suffix,
+        )
+        target = fnv(plaintext, offset_basis, prime, 128)
+        result = ctx.crack(
+            target,
+            max_len=0,
+            options=CrackOptions(strategy=CrackStrategy.ENUMERATE, max_crack_len=0),
         )
         self.assertEqual(result.value, plaintext)
         self.assertCracked(result, target, ctx)

@@ -48,6 +48,17 @@ class ContextApiTestCase(unittest.TestCase):
         ctx = CrackContext(valid_chars=b"baba\xff\x00")
         self.assertEqual(ctx.valid_chars, b"\x00ab\xff")
 
+    def test_known_parts_round_trip_embedded_nul_bytes(self):
+        ctx = CrackContext(
+            prefix=b"pre\x00fix",
+            suffix=b"suf\x00fix",
+            brute_chars=b"a\x00b",
+        )
+
+        self.assertEqual(ctx.prefix, b"pre\x00fix")
+        self.assertEqual(ctx.suffix, b"suf\x00fix")
+        self.assertEqual(ctx.brute_chars, b"a\x00b")
+
     def test_context_copies_buffer_inputs(self):
         prefix = bytearray(b"pre")
         suffix = bytearray(b"suf")
