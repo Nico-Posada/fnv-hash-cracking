@@ -6,15 +6,14 @@
 // internal version exists for the crack funcs to
 // use directly with known lengths
 uint64_t fnv_u64_with_len(
-    const char* data,
-    const size_t data_len,
+    char_buffer data,
     const uint64_t offset_basis,
     const uint64_t prime,
     const uint32_t bits
 ) {
     uint64_t hash = offset_basis;
-    for (size_t i = 0; i < data_len; ++i) {
-        hash ^= (uint8_t)data[i];
+    for (size_t i = 0; i < data.length; ++i) {
+        hash ^= (uint8_t)data.data[i];
         hash *= prime;
     }
 
@@ -28,14 +27,18 @@ uint64_t fnv_u64(
     const uint64_t prime,
     const uint32_t bits
 ) {
-    return fnv_u64_with_len(data, strlen(data), offset_basis, prime, bits);
+    return fnv_u64_with_len(
+        (char_buffer){data, strlen(data)},
+        offset_basis,
+        prime,
+        bits
+    );
 }
 
 // MUST CALL `fmpz_clear` ON THE RETURN VALUE AFTER YOU USE IT
 void fnv_fmpz_with_len(
     fmpz_t result,
-    const char* data,
-    const size_t data_len,
+    char_buffer data,
     const fmpz_t offset_basis,
     const fmpz_t prime,
     const uint32_t bits
@@ -46,10 +49,10 @@ void fnv_fmpz_with_len(
     fmpz_ui_pow_ui(mask, 2, bits);
     fmpz_sub_ui(mask, mask, (ulong)1);
 
-    for (size_t i = 0; i < data_len; ++i) {
+    for (size_t i = 0; i < data.length; ++i) {
         // since fmpz values are normal ints until the number becomes larger than 2**62, we can
         // get away with making this fake fmpz value
-        fmpz_set_ui(cur_char, (ulong)(uint8_t)data[i]);
+        fmpz_set_ui(cur_char, (ulong)(uint8_t)data.data[i]);
         fmpz_xor(hash, hash, cur_char);
         fmpz_mul(hash, hash, prime);
         fmpz_and(hash, hash, mask);
@@ -68,5 +71,11 @@ void fnv_fmpz(
     const fmpz_t prime,
     const uint32_t bits
 ) {
-    fnv_fmpz_with_len(result, data, strlen(data), offset_basis, prime, bits);
+    fnv_fmpz_with_len(
+        result,
+        (char_buffer){data, strlen(data)},
+        offset_basis,
+        prime,
+        bits
+    );
 }

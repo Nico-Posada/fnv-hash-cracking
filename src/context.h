@@ -7,13 +7,13 @@
 #include <flint/fmpz.h>
 
 typedef struct _char_buffer {
-    char* data;
+    const char* data;
     size_t length;
 } char_buffer;
 
 inline void clear_char_buffer(char_buffer* buf) {
     if (buf->data) {
-        free(buf->data);
+        free((void*)buf->data);
     }
 
     buf->data = NULL;
@@ -55,10 +55,10 @@ void print_context(context_t ctx);
 
 /* setters */
 
-bool set_suffix(context_t ctx, const char* suffix, size_t suffix_len);
-bool set_prefix(context_t ctx, const char* prefix, size_t prefix_len);
-bool set_brute_chars(context_t ctx, const char* brute_chars, size_t brute_chars_len);
-void set_valid_chars(context_t ctx, const char* valid_chars, size_t valid_chars_len);
+bool set_suffix(context_t ctx, char_buffer suffix);
+bool set_prefix(context_t ctx, char_buffer prefix);
+bool set_brute_chars(context_t ctx, char_buffer brute_chars);
+void set_valid_chars(context_t ctx, char_buffer valid_chars);
 void set_offset_basis(context_t ctx, uint64_t offset_basis);
 void set_offset_basis_fmpz(context_t ctx, fmpz_t offset_basis);
 void set_prime(context_t ctx, uint64_t prime);
@@ -93,14 +93,10 @@ bool init_crack_ctx_with_len(
     uint64_t offset_basis,
     uint64_t prime,
     uint32_t bits,
-    const char* brute_chars,
-    size_t brute_chars_len,
-    const char* valid_chars,
-    size_t valid_chars_len,
-    const char* prefix,
-    size_t prefix_len,
-    const char* suffix,
-    size_t suffix_len
+    char_buffer brute_chars,
+    char_buffer valid_chars,
+    char_buffer prefix,
+    char_buffer suffix
 );
 
 bool init_crack_fmpz_ctx(
@@ -119,14 +115,10 @@ bool init_crack_fmpz_ctx_with_len(
     fmpz_t offset_basis,
     fmpz_t prime,
     uint32_t bits,
-    const char* brute_chars,
-    size_t brute_chars_len,
-    const char* valid_chars,
-    size_t valid_chars_len,
-    const char* prefix,
-    size_t prefix_len,
-    const char* suffix,
-    size_t suffix_len
+    char_buffer brute_chars,
+    char_buffer valid_chars,
+    char_buffer prefix,
+    char_buffer suffix
 );
 
 /* destructors */

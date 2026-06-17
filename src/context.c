@@ -7,21 +7,17 @@
 bool _init_common(
     context_t ctx,
     uint32_t bits,
-    const char* brute_chars,
-    size_t brute_chars_len,
-    const char* valid_chars,
-    size_t valid_chars_len,
-    const char* prefix,
-    size_t prefix_len,
-    const char* suffix,
-    size_t suffix_len
+    char_buffer brute_chars,
+    char_buffer valid_chars,
+    char_buffer prefix,
+    char_buffer suffix
 ) {
-    if (!set_prefix(ctx, prefix, prefix_len) ||
-        !set_suffix(ctx, suffix, suffix_len) ||
-        !set_brute_chars(ctx, brute_chars, brute_chars_len))
+    if (!set_prefix(ctx, prefix) ||
+        !set_suffix(ctx, suffix) ||
+        !set_brute_chars(ctx, brute_chars))
         return false;
 
-    set_valid_chars(ctx, valid_chars, valid_chars_len);
+    set_valid_chars(ctx, valid_chars);
     ctx->bits = bits;
     return true;
 }
@@ -31,21 +27,17 @@ bool init_crack_ctx_with_len(
     uint64_t offset_basis,
     uint64_t prime,
     uint32_t bits,
-    const char* brute_chars,
-    size_t brute_chars_len,
-    const char* valid_chars,
-    size_t valid_chars_len,
-    const char* prefix,
-    size_t prefix_len,
-    const char* suffix,
-    size_t suffix_len
+    char_buffer brute_chars,
+    char_buffer valid_chars,
+    char_buffer prefix,
+    char_buffer suffix
 ) {
     if (!_init_common(
         ctx, bits,
-        brute_chars, brute_chars_len,
-        valid_chars, valid_chars_len,
-        prefix, prefix_len,
-        suffix, suffix_len
+        brute_chars,
+        valid_chars,
+        prefix,
+        suffix
     )) {
         return false;
     }
@@ -69,10 +61,10 @@ bool init_crack_ctx(
 ) {
     return init_crack_ctx_with_len(
         ctx, offset_basis, prime, bits,
-        brute_chars, brute_chars ? strlen(brute_chars) : 0,
-        valid_chars, valid_chars ? strlen(valid_chars) : 0,
-        prefix, prefix ? strlen(prefix) : 0,
-        suffix, suffix ? strlen(suffix) : 0
+        (char_buffer){brute_chars, brute_chars ? strlen(brute_chars) : 0},
+        (char_buffer){valid_chars, valid_chars ? strlen(valid_chars) : 0},
+        (char_buffer){prefix, prefix ? strlen(prefix) : 0},
+        (char_buffer){suffix, suffix ? strlen(suffix) : 0}
     );
 }
 
@@ -81,21 +73,17 @@ bool init_crack_fmpz_ctx_with_len(
     fmpz_t offset_basis,
     fmpz_t prime,
     uint32_t bits,
-    const char* brute_chars,
-    size_t brute_chars_len,
-    const char* valid_chars,
-    size_t valid_chars_len,
-    const char* prefix,
-    size_t prefix_len,
-    const char* suffix,
-    size_t suffix_len
+    char_buffer brute_chars,
+    char_buffer valid_chars,
+    char_buffer prefix,
+    char_buffer suffix
 ) {
     if (!_init_common(
         ctx, bits,
-        brute_chars, brute_chars_len,
-        valid_chars, valid_chars_len,
-        prefix, prefix_len,
-        suffix, suffix_len
+        brute_chars,
+        valid_chars,
+        prefix,
+        suffix
     )) {
         return false;
     }
@@ -121,10 +109,10 @@ bool init_crack_fmpz_ctx(
 ) {
     return init_crack_fmpz_ctx_with_len(
         ctx, offset_basis, prime, bits,
-        brute_chars, brute_chars ? strlen(brute_chars) : 0,
-        valid_chars, valid_chars ? strlen(valid_chars) : 0,
-        prefix, prefix ? strlen(prefix) : 0,
-        suffix, suffix ? strlen(suffix) : 0
+        (char_buffer){brute_chars, brute_chars ? strlen(brute_chars) : 0},
+        (char_buffer){valid_chars, valid_chars ? strlen(valid_chars) : 0},
+        (char_buffer){prefix, prefix ? strlen(prefix) : 0},
+        (char_buffer){suffix, suffix ? strlen(suffix) : 0}
     );
 }
 
@@ -138,9 +126,9 @@ void destroy_crack_ctx(context_t ctx) {
         fmpz_clear(ctx->offset_basis_fmpz);
     }
 
-    set_prefix(ctx, NULL, 0);
-    set_suffix(ctx, NULL, 0);
-    set_brute_chars(ctx, NULL, 0);
+    set_prefix(ctx, (char_buffer){NULL, 0});
+    set_suffix(ctx, (char_buffer){NULL, 0});
+    set_brute_chars(ctx, (char_buffer){NULL, 0});
     set_offset_basis(ctx, 0);
     set_prime(ctx, 0);
     memset(ctx->valid_chars, 0, sizeof(ctx->valid_chars));
@@ -148,62 +136,62 @@ void destroy_crack_ctx(context_t ctx) {
     ctx->_initialized = false;
 }
 
-inline bool _set_str_ref(char_buffer* ref, const char* str, size_t str_length) {
-    if (ref->data == str || (ref->data && str && str_length == ref->length &&
-        memcmp(ref->data, str, str_length) == 0)) {
+inline bool _set_str_ref(char_buffer* ref, char_buffer str) {
+    if (ref->data == str.data || (ref->data && str.data && str.length == ref->length &&
+        memcmp(ref->data, str.data, str.length) == 0)) {
         return true;
     }
 
     if (ref) {
         // assume it was last set by this func
-        free(ref->data);
+        free((void*)ref->data);
         ref->data = NULL;
         ref->length = 0;
     }
 
-    if (str == NULL || str_length == 0) {
+    if (str.data == NULL || str.length == 0) {
         ref->data = NULL;
         ref->length = 0;
         return true;
     }
 
-    char* new_data = malloc(str_length + 1);
+    char* new_data = malloc(str.length + 1);
     if (!new_data) {
         ref->data = NULL;
         ref->length = 0;
         return false;
     }
 
-    memcpy(new_data, str, str_length);
-    new_data[str_length] = 0;
+    memcpy(new_data, str.data, str.length);
+    new_data[str.length] = 0;
     ref->data = new_data;
-    ref->length = str_length;
+    ref->length = str.length;
     return true;
 }
 
-inline void _set_table_data(uint8_t tbl[256], const char* valid_chars, size_t valid_chars_len) {
-    for (size_t i = 0; i < valid_chars_len; ++i) {
-        tbl[(uint8_t)valid_chars[i]] = 1;
+inline void _set_table_data(uint8_t tbl[256], char_buffer valid_chars) {
+    for (size_t i = 0; i < valid_chars.length; ++i) {
+        tbl[(uint8_t)valid_chars.data[i]] = 1;
     }
 }
 
 /* setters */
 
-inline bool set_suffix(context_t ctx, const char* suffix, size_t suffix_len) {
-    return _set_str_ref(get_suffix(ctx), suffix, suffix_len);
+inline bool set_suffix(context_t ctx, char_buffer suffix) {
+    return _set_str_ref(get_suffix(ctx), suffix);
 }
 
-inline bool set_prefix(context_t ctx, const char* prefix, size_t prefix_len) {
-    return _set_str_ref(get_prefix(ctx), prefix, prefix_len);
+inline bool set_prefix(context_t ctx, char_buffer prefix) {
+    return _set_str_ref(get_prefix(ctx), prefix);
 }
 
-inline bool set_brute_chars(context_t ctx, const char* brute_chars, size_t brute_chars_len) {
-    return _set_str_ref(get_brute_chars(ctx), brute_chars, brute_chars_len);
+inline bool set_brute_chars(context_t ctx, char_buffer brute_chars) {
+    return _set_str_ref(get_brute_chars(ctx), brute_chars);
 }
 
-inline void set_valid_chars(context_t ctx, const char* valid_chars, size_t valid_chars_len) {
-    if (valid_chars && valid_chars_len) {
-        _set_table_data(ctx->valid_chars, valid_chars, valid_chars_len);
+inline void set_valid_chars(context_t ctx, char_buffer valid_chars) {
+    if (valid_chars.data && valid_chars.length) {
+        _set_table_data(ctx->valid_chars, valid_chars);
     }
     else {
         // special case, if valid chars is not provided, we assume all chars are valid
@@ -306,17 +294,17 @@ void print_context(context_t ctx) {
     }
     printf("bits=%u\n", ctx->bits);
     printf("prefix=b\"");
-    for (int i = 0; i < get_prefix(ctx)->length; ++i) {
+    for (size_t i = 0; i < get_prefix(ctx)->length; ++i) {
         _fill_hex_char(_tmp_buf, (uint8_t)get_prefix(ctx)->data[i]);
         printf("%s", _tmp_buf);
     }
     printf("\"\nsuffix=b\"");
-    for (int i = 0; i < get_suffix(ctx)->length; ++i) {
+    for (size_t i = 0; i < get_suffix(ctx)->length; ++i) {
         _fill_hex_char(_tmp_buf, (uint8_t)get_suffix(ctx)->data[i]);
         printf("%s", _tmp_buf);
     }
     printf("\"\nbrute_chars=b\"");
-    for (int i = 0; i < get_brute_chars(ctx)->length; ++i) {
+    for (size_t i = 0; i < get_brute_chars(ctx)->length; ++i) {
         _fill_hex_char(_tmp_buf, (uint8_t)get_brute_chars(ctx)->data[i]);
         printf("%s", _tmp_buf);
     }

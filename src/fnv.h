@@ -2,9 +2,10 @@
 #include <stdint.h>
 #include <flint/fmpz.h>
 
+#include "context.h"
+
 uint64_t fnv_u64_with_len(
-    const char* data,
-    const size_t data_len,
+    char_buffer data,
     const uint64_t offset_basis,
     const uint64_t prime,
     const uint32_t bits
@@ -19,8 +20,7 @@ uint64_t fnv_u64(
 
 void fnv_fmpz_with_len(
     fmpz_t result,
-    const char* data,
-    const size_t data_len,
+    char_buffer data,
     const fmpz_t offset_basis,
     const fmpz_t prime,
     const uint32_t bits

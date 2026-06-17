@@ -139,7 +139,7 @@ CrackContext_new(PyTypeObject* type, PyObject* args, PyObject* kwds) {
 
 // these vars were created in the GET_BUFFER_OBJ_SAFE macro
 #define BUFFER_ARG(arg) \
-    arg##_view.buf, arg##_view.len
+    (char_buffer){(const char*)arg##_view.buf, arg##_view.len}
 
     // initialize the crack ctx
     if (bits <= 64) {

@@ -89,35 +89,39 @@ inline static void _init_weights(
 }
 
 inline static bool _store_result_safe(
-    const char* prefix,
-    const size_t prefix_len,
-    const char* bruted,
-    const size_t bruted_len,
-    const char* cracked,
-    const size_t cracked_len,
-    const char* suffix,
-    const size_t suffix_len,
-    char** out_buffer,
-    size_t* out_buffer_len
+    char_buffer prefix,
+    char_buffer bruted,
+    char_buffer cracked,
+    char_buffer suffix,
+    char_buffer* out_buffer
 ) {
-    const size_t total_len = prefix_len + bruted_len + cracked_len + suffix_len;
+    const size_t total_len = prefix.length + bruted.length + cracked.length + suffix.length;
     char* result_buf = malloc(total_len + 1);
     if (!result_buf) {
         return false;
     }
 
     size_t cur_off = 0;
-    memcpy(result_buf + cur_off, prefix, prefix_len);
-    cur_off += prefix_len;
-    memcpy(result_buf + cur_off, bruted, bruted_len);
-    cur_off += bruted_len;
-    memcpy(result_buf + cur_off, cracked, cracked_len);
-    cur_off += cracked_len;
-    memcpy(result_buf + cur_off, suffix, suffix_len);
-    cur_off += suffix_len;
+    if (prefix.length) {
+        memcpy(result_buf + cur_off, prefix.data, prefix.length);
+        cur_off += prefix.length;
+    }
+    if (bruted.length) {
+        memcpy(result_buf + cur_off, bruted.data, bruted.length);
+        cur_off += bruted.length;
+    }
+    if (cracked.length) {
+        memcpy(result_buf + cur_off, cracked.data, cracked.length);
+        cur_off += cracked.length;
+    }
+    if (suffix.length) {
+        memcpy(result_buf + cur_off, suffix.data, suffix.length);
+        cur_off += suffix.length;
+    }
 
-    *out_buffer = result_buf;
-    *out_buffer_len = total_len;
+    result_buf[cur_off] = 0;
+    out_buffer->data = result_buf;
+    out_buffer->length = total_len;
     return true;
 }
 
@@ -154,19 +158,18 @@ inline static void _init_modulus(fmpz_t MOD, const uint32_t bit_len) {
 
 inline static uint64_t _reverse_suffix_u64(
     uint64_t target,
-    const char* suffix,
-    const size_t suffix_len,
+    char_buffer suffix,
     const uint64_t prime,
     const uint32_t bit_len
 ) {
-    if (suffix_len == 0) {
+    if (suffix.length == 0) {
         return target;
     }
 
     const uint64_t inv_prime = inverse(prime, bit_len);
-    for (int32_t i = suffix_len - 1; i >= 0; --i) {
+    for (size_t i = suffix.length; i > 0; --i) {
         target *= inv_prime;
-        target ^= (uint8_t)suffix[i];
+        target ^= (uint8_t)suffix.data[i - 1];
         target &= _bit_mask_u64(bit_len);
     }
     return target;
@@ -175,14 +178,13 @@ inline static uint64_t _reverse_suffix_u64(
 inline static void _reverse_suffix_fmpz(
     fmpz_t ntarget,
     const fmpz_t target,
-    const char* suffix,
-    const size_t suffix_len,
+    char_buffer suffix,
     const fmpz_t prime,
     const fmpz_t bit_mask,
     const uint32_t bit_len
 ) {
     fmpz_set(ntarget, target);
-    if (suffix_len == 0) {
+    if (suffix.length == 0) {
         return;
     }
 
@@ -191,8 +193,8 @@ inline static void _reverse_suffix_fmpz(
     fmpz_init(cur_char);
 
     inverse_fmpz(inv_prime, prime, bit_len);
-    for (int32_t i = suffix_len - 1; i >= 0; --i) {
-        fmpz_set_ui(cur_char, (ulong)(uint8_t)suffix[i]);
+    for (size_t i = suffix.length; i > 0; --i) {
+        fmpz_set_ui(cur_char, (ulong)(uint8_t)suffix.data[i - 1]);
         fmpz_mul(ntarget, ntarget, inv_prime);
         fmpz_xor(ntarget, ntarget, cur_char);
         fmpz_and(ntarget, ntarget, bit_mask);
@@ -343,12 +345,9 @@ typedef struct {
     uint64_t new_hash;
     uint64_t prime;
     uint32_t bit_len;
-    const char* prefix;
-    size_t prefix_len;
-    const char* bruted;
-    size_t bruted_len;
-    const char* suffix;
-    size_t suffix_len;
+    char_buffer prefix;
+    char_buffer bruted;
+    char_buffer suffix;
     char_buffer* out_buffer;
     char* ret_buf;
     uint32_t delta_len;
@@ -374,15 +373,13 @@ static bool _enum_u64_candidate(
     }
 
     uint64_t hash = fnv_u64_with_len(
-        cb_ctx->ret_buf,
-        cb_ctx->delta_len,
+        (char_buffer){cb_ctx->ret_buf, cb_ctx->delta_len},
         cb_ctx->new_hash,
         cb_ctx->prime,
         cb_ctx->bit_len
     );
     hash = fnv_u64_with_len(
         cb_ctx->suffix,
-        cb_ctx->suffix_len,
         hash,
         cb_ctx->prime,
         cb_ctx->bit_len
@@ -391,21 +388,17 @@ static bool _enum_u64_candidate(
         return false;
     }
 
-    char* output;
-    size_t output_len;
     if (!_store_result_safe(
-        cb_ctx->prefix, cb_ctx->prefix_len,
-        cb_ctx->bruted, cb_ctx->bruted_len,
-        cb_ctx->ret_buf, cb_ctx->delta_len,
-        cb_ctx->suffix, cb_ctx->suffix_len,
-        &output, &output_len
+        cb_ctx->prefix,
+        cb_ctx->bruted,
+        (char_buffer){cb_ctx->ret_buf, cb_ctx->delta_len},
+        cb_ctx->suffix,
+        cb_ctx->out_buffer
     )) {
         cb_ctx->memory_error = true;
         return true;
     }
 
-    cb_ctx->out_buffer->data = output;
-    cb_ctx->out_buffer->length = output_len;
     return true;
 }
 
@@ -425,26 +418,24 @@ static CrackResult _crack_u64_with_len_enumerate(
     const uint32_t bit_len = ctx->bits;
     const uint64_t prime = get_prime(ctx);
     const uint64_t offset_basis = get_offset_basis(ctx);
-    const char* prefix = get_prefix(ctx)->data; if (!prefix) prefix = "";
-    const char* suffix = get_suffix(ctx)->data; if (!suffix) suffix = "";
+    char_buffer prefix = *get_prefix(ctx);
+    char_buffer suffix = *get_suffix(ctx);
     char_buffer* brute_chars = get_brute_chars(ctx);
-    const size_t prefix_len = get_prefix(ctx)->length;
-    const size_t suffix_len = get_suffix(ctx)->length;
 
-    if (expected_len < prefix_len + suffix_len + brute_len) {
+    if (expected_len < prefix.length + suffix.length + brute_len) {
         return BAD_SEARCH_LENGTH;
     }
 
-    const uint32_t nn = expected_len - brute_len - prefix_len - suffix_len;
+    const uint32_t nn = expected_len - brute_len - prefix.length - suffix.length;
     crack_options_t opts = _normalize_options(options);
 
     brute_chars_t brute;
-    if (!product(&brute, brute_chars->data, brute_chars->length, brute_len)) {
+    if (!product(&brute, *brute_chars, brute_len)) {
         return MEMORY_ERROR;
     }
 
-    const uint64_t prefixed_hash = fnv_u64_with_len(prefix, prefix_len, offset_basis, prime, bit_len);
-    const uint64_t ntarget = _reverse_suffix_u64(target, suffix, suffix_len, prime, bit_len);
+    const uint64_t prefixed_hash = fnv_u64_with_len(prefix, offset_basis, prime, bit_len);
+    const uint64_t ntarget = _reverse_suffix_u64(target, suffix, prime, bit_len);
 
     char* ret_buf = calloc((size_t)nn + 1, 1);
     int64_t* lower_bounds = NULL;
@@ -492,28 +483,25 @@ static CrackResult _crack_u64_with_len_enumerate(
         }
 
         const char* cur = brute.buffer + i * brute.entry_length;
-        const uint64_t new_hash = fnv_u64_with_len(cur, brute.entry_length, prefixed_hash, prime, bit_len);
+        char_buffer bruted = (char_buffer){cur, brute.entry_length};
+        const uint64_t new_hash = fnv_u64_with_len(bruted, prefixed_hash, prime, bit_len);
 
         if (nn == 0) {
-            uint64_t hash = fnv_u64_with_len(suffix, suffix_len, new_hash, prime, bit_len);
+            uint64_t hash = fnv_u64_with_len(suffix, new_hash, prime, bit_len);
             if (hash != target) {
                 continue;
             }
 
-            char* output;
-            size_t output_len;
             if (!_store_result_safe(
-                prefix, prefix_len,
-                cur, brute.entry_length,
-                ret_buf, 0,
-                suffix, suffix_len,
-                &output, &output_len
+                prefix,
+                bruted,
+                (char_buffer){ret_buf, 0},
+                suffix,
+                out_buffer
             )) {
                 result = MEMORY_ERROR;
                 goto cleanup;
             }
-            out_buffer->data = output;
-            out_buffer->length = output_len;
             result = SUCCESS;
             goto cleanup;
         }
@@ -531,11 +519,8 @@ static CrackResult _crack_u64_with_len_enumerate(
             .prime = prime,
             .bit_len = bit_len,
             .prefix = prefix,
-            .prefix_len = prefix_len,
-            .bruted = cur,
-            .bruted_len = brute.entry_length,
+            .bruted = bruted,
             .suffix = suffix,
-            .suffix_len = suffix_len,
             .out_buffer = out_buffer,
             .ret_buf = ret_buf,
             .delta_len = nn,
@@ -588,12 +573,9 @@ typedef struct {
     const fmpz* prime;
     const fmpz* modulus;
     uint32_t bit_len;
-    const char* prefix;
-    size_t prefix_len;
-    const char* bruted;
-    size_t bruted_len;
-    const char* suffix;
-    size_t suffix_len;
+    char_buffer prefix;
+    char_buffer bruted;
+    char_buffer suffix;
     char_buffer* out_buffer;
     char* ret_buf;
     uint32_t delta_len;
@@ -622,8 +604,7 @@ static bool _enum_fmpz_candidate(
     fmpz_init(hash);
     fnv_fmpz_with_len(
         hash,
-        cb_ctx->ret_buf,
-        cb_ctx->delta_len,
+        (char_buffer){cb_ctx->ret_buf, cb_ctx->delta_len},
         cb_ctx->new_hash,
         cb_ctx->prime,
         cb_ctx->bit_len
@@ -631,7 +612,6 @@ static bool _enum_fmpz_candidate(
     fnv_fmpz_with_len(
         hash,
         cb_ctx->suffix,
-        cb_ctx->suffix_len,
         hash,
         cb_ctx->prime,
         cb_ctx->bit_len
@@ -643,21 +623,17 @@ static bool _enum_fmpz_candidate(
         return false;
     }
 
-    char* output;
-    size_t output_len;
     if (!_store_result_safe(
-        cb_ctx->prefix, cb_ctx->prefix_len,
-        cb_ctx->bruted, cb_ctx->bruted_len,
-        cb_ctx->ret_buf, cb_ctx->delta_len,
-        cb_ctx->suffix, cb_ctx->suffix_len,
-        &output, &output_len
+        cb_ctx->prefix,
+        cb_ctx->bruted,
+        (char_buffer){cb_ctx->ret_buf, cb_ctx->delta_len},
+        cb_ctx->suffix,
+        cb_ctx->out_buffer
     )) {
         cb_ctx->memory_error = true;
         return true;
     }
 
-    cb_ctx->out_buffer->data = output;
-    cb_ctx->out_buffer->length = output_len;
     return true;
 }
 
@@ -677,21 +653,19 @@ static CrackResult _crack_fmpz_with_len_enumerate(
     const uint32_t bit_len = ctx->bits;
     const fmpz* prime = (fmpz*)ctx->prime_fmpz;
     const fmpz* offset_basis = (fmpz*)ctx->offset_basis_fmpz;
-    const char* prefix = get_prefix(ctx)->data; if (!prefix) prefix = "";
-    const char* suffix = get_suffix(ctx)->data; if (!suffix) suffix = "";
+    char_buffer prefix = *get_prefix(ctx);
+    char_buffer suffix = *get_suffix(ctx);
     char_buffer* brute_chars = get_brute_chars(ctx);
-    const size_t prefix_len = get_prefix(ctx)->length;
-    const size_t suffix_len = get_suffix(ctx)->length;
 
-    if (expected_len < prefix_len + suffix_len + brute_len) {
+    if (expected_len < prefix.length + suffix.length + brute_len) {
         return BAD_SEARCH_LENGTH;
     }
 
-    const uint32_t nn = expected_len - brute_len - prefix_len - suffix_len;
+    const uint32_t nn = expected_len - brute_len - prefix.length - suffix.length;
     crack_options_t opts = _normalize_options(options);
 
     brute_chars_t brute;
-    if (!product(&brute, brute_chars->data, brute_chars->length, brute_len)) {
+    if (!product(&brute, *brute_chars, brute_len)) {
         return MEMORY_ERROR;
     }
 
@@ -723,8 +697,8 @@ static CrackResult _crack_fmpz_with_len_enumerate(
     CrackResult result = FAILED;
     fmpz_ui_pow_ui(MOD, 2, bit_len);
     fmpz_sub_ui(bit_mask, MOD, (ulong)1);
-    _reverse_suffix_fmpz(ntarget, target, suffix, suffix_len, prime, bit_mask, bit_len);
-    fnv_fmpz_with_len(prefixed_hash, prefix, prefix_len, offset_basis, prime, bit_len);
+    _reverse_suffix_fmpz(ntarget, target, suffix, prime, bit_mask, bit_len);
+    fnv_fmpz_with_len(prefixed_hash, prefix, offset_basis, prime, bit_len);
 
     if (nn != 0) {
         lower_bounds = malloc((size_t)nn * sizeof(*lower_bounds));
@@ -747,32 +721,29 @@ static CrackResult _crack_fmpz_with_len_enumerate(
         }
 
         const char* cur = brute.buffer + i * brute.entry_length;
-        fnv_fmpz_with_len(new_hash, cur, brute.entry_length, prefixed_hash, prime, bit_len);
+        char_buffer bruted = (char_buffer){cur, brute.entry_length};
+        fnv_fmpz_with_len(new_hash, bruted, prefixed_hash, prime, bit_len);
 
         if (nn == 0) {
             fmpz_t hash;
             fmpz_init(hash);
-            fnv_fmpz_with_len(hash, suffix, suffix_len, new_hash, prime, bit_len);
+            fnv_fmpz_with_len(hash, suffix, new_hash, prime, bit_len);
             const bool is_eq = fmpz_equal(hash, target);
             fmpz_clear(hash);
             if (!is_eq) {
                 continue;
             }
 
-            char* output;
-            size_t output_len;
             if (!_store_result_safe(
-                prefix, prefix_len,
-                cur, brute.entry_length,
-                ret_buf, 0,
-                suffix, suffix_len,
-                &output, &output_len
+                prefix,
+                bruted,
+                (char_buffer){ret_buf, 0},
+                suffix,
+                out_buffer
             )) {
                 result = MEMORY_ERROR;
                 goto cleanup;
             }
-            out_buffer->data = output;
-            out_buffer->length = output_len;
             result = SUCCESS;
             goto cleanup;
         }
@@ -790,11 +761,8 @@ static CrackResult _crack_fmpz_with_len_enumerate(
             .modulus = MOD,
             .bit_len = bit_len,
             .prefix = prefix,
-            .prefix_len = prefix_len,
-            .bruted = cur,
-            .bruted_len = brute.entry_length,
+            .bruted = bruted,
             .suffix = suffix,
-            .suffix_len = suffix_len,
             .out_buffer = out_buffer,
             .ret_buf = ret_buf,
             .delta_len = nn,
@@ -858,9 +826,13 @@ static CrackResult _crack_u64_with_len_lll(
     register const uint32_t bit_len = ctx->bits;
     register const uint64_t prime = get_prime(ctx);
     register const uint64_t offset_basis = get_offset_basis(ctx);
-    register const char* prefix = get_prefix(ctx)->data; if (!prefix) prefix = "";
-    register const char* suffix = get_suffix(ctx)->data; if (!suffix) suffix = "";
+    char_buffer prefix = *get_prefix(ctx);
+    char_buffer suffix = *get_suffix(ctx);
     char_buffer* brute_chars = get_brute_chars(ctx);
+
+    if (expected_len < prefix.length + suffix.length + brute_len) {
+        return BAD_SEARCH_LENGTH;
+    }
 
     fmpz_t MOD; fmpz_init(MOD);
     if (bit_len == 64) {
@@ -870,10 +842,7 @@ static CrackResult _crack_u64_with_len_lll(
         fmpz_set_ui(MOD, (uint64_t)1 << bit_len); // 2 ^ bit_len
     }
 
-    const size_t prefix_len = get_prefix(ctx)->length;
-    const size_t suffix_len = get_suffix(ctx)->length;
-
-    const uint32_t nn = expected_len - brute_len - prefix_len - suffix_len;
+    const uint32_t nn = expected_len - brute_len - prefix.length - suffix.length;
     const uint32_t dim = nn + 2;
 
     register const uint64_t bit_mask = ~(uint64_t)0 >> (64 - bit_len);
@@ -916,11 +885,11 @@ static CrackResult _crack_u64_with_len_lll(
 
     // perform reverse of fnv algo to get hash without suffix applied
     uint64_t ntarget = target;
-    if (suffix_len != 0) {
+    if (suffix.length != 0) {
         uint64_t inv_prime = inverse(prime, bit_len);
-        for (int32_t i = suffix_len - 1; i >= 0; --i) {
+        for (size_t i = suffix.length; i > 0; --i) {
             ntarget *= inv_prime;
-            ntarget ^= suffix[i];
+            ntarget ^= suffix.data[i - 1];
         }
     }
 
@@ -938,12 +907,12 @@ static CrackResult _crack_u64_with_len_lll(
 
     CrackResult result = FAILED;
     brute_chars_t brute = {0};
-    if (!product(&brute, brute_chars->data, brute_chars->length, brute_len)) {
+    if (!product(&brute, *brute_chars, brute_len)) {
         result = MEMORY_ERROR;
         goto cleanup;
     }
 
-    const uint64_t prefixed_hash = fnv_u64_with_len(prefix, prefix_len, offset_basis, prime, bit_len);
+    const uint64_t prefixed_hash = fnv_u64_with_len(prefix, offset_basis, prime, bit_len);
     for (size_t i = 0; i < brute.total_entries; ++i) {
         if (fnvcrack_interrupted()) {
             result = INTERRUPTED;
@@ -951,9 +920,10 @@ static CrackResult _crack_u64_with_len_lll(
         }
 
         const char* cur = brute.buffer + i * brute.entry_length;
+        char_buffer bruted = (char_buffer){cur, brute.entry_length};
 
         // get the hash without the prefix applied
-        const uint64_t new_hash = fnv_u64_with_len(cur, brute.entry_length, prefixed_hash, prime, bit_len);
+        const uint64_t new_hash = fnv_u64_with_len(bruted, prefixed_hash, prime, bit_len);
 
         const uint64_t m = (new_hash * P - ntarget) & bit_mask;
 
@@ -986,24 +956,20 @@ static CrackResult _crack_u64_with_len_lll(
 
         if (idx >= 0) {
             // confirm the hash is correct, false positives are possible
-            uint64_t hash = fnv_u64_with_len(ret_buf, nn, new_hash, prime, bit_len);
-            hash = fnv_u64_with_len(suffix, suffix_len, hash, prime, bit_len);
+            uint64_t hash = fnv_u64_with_len((char_buffer){ret_buf, nn}, new_hash, prime, bit_len);
+            hash = fnv_u64_with_len(suffix, hash, prime, bit_len);
 
             if (hash == target) {
-                char* output;
-                size_t output_len;
                 if (!_store_result_safe(
-                    prefix, prefix_len,
-                    cur, brute.entry_length,
-                    ret_buf, nn,
-                    suffix, suffix_len,
-                    &output, &output_len)) {
+                    prefix,
+                    bruted,
+                    (char_buffer){ret_buf, nn},
+                    suffix,
+                    out_buffer)) {
                     result = MEMORY_ERROR;
                     goto cleanup;
                 }
 
-                out_buffer->data = output;
-                out_buffer->length = output_len;
                 result = SUCCESS;
                 goto cleanup;
             }
@@ -1038,17 +1004,18 @@ static CrackResult _crack_fmpz_with_len_lll(
     const uint32_t bit_len = ctx->bits;
     const fmpz* prime = (fmpz*)ctx->prime_fmpz;
     const fmpz* offset_basis = (fmpz*)ctx->offset_basis_fmpz;
-    const char* prefix = get_prefix(ctx)->data; if (!prefix) prefix = "";
-    const char* suffix = get_suffix(ctx)->data; if (!suffix) suffix = "";
+    char_buffer prefix = *get_prefix(ctx);
+    char_buffer suffix = *get_suffix(ctx);
     char_buffer* brute_chars = get_brute_chars(ctx);
+
+    if (expected_len < prefix.length + suffix.length + brute_len) {
+        return BAD_SEARCH_LENGTH;
+    }
 
     fmpz_t MOD; fmpz_init(MOD);
     fmpz_ui_pow_ui(MOD, 2, bit_len);
 
-    const size_t prefix_len = get_prefix(ctx)->length;
-    const size_t suffix_len = get_suffix(ctx)->length;
-
-    const uint32_t nn = expected_len - brute_len - prefix_len - suffix_len;
+    const uint32_t nn = expected_len - brute_len - prefix.length - suffix.length;
     const uint32_t dim = nn + 2;
 
     // const uint64_t bit_mask = bit_len != 64 ? ((uint64_t)1 << bit_len) - 1 : ~(uint64_t)0;
@@ -1095,12 +1062,12 @@ static CrackResult _crack_fmpz_with_len_lll(
     // perform reverse of fnv algo to get hash without suffix applied
     fmpz_t ntarget;
     fmpz_init_set(ntarget, target);
-    if (suffix_len != 0) {
+    if (suffix.length != 0) {
         fmpz_t inv_prime, cur_char;
         fmpz_init(inv_prime); fmpz_init(cur_char);
         inverse_fmpz(inv_prime, prime, bit_len);
-        for (int32_t i = suffix_len - 1; i >= 0; --i) {
-            fmpz_set_ui(cur_char, (ulong)(uint8_t)suffix[i]);
+        for (size_t i = suffix.length; i > 0; --i) {
+            fmpz_set_ui(cur_char, (ulong)(uint8_t)suffix.data[i - 1]);
             fmpz_mul(ntarget, ntarget, inv_prime);
             fmpz_xor(ntarget, ntarget, cur_char);
             fmpz_and(ntarget, ntarget, bit_mask);
@@ -1123,7 +1090,7 @@ static CrackResult _crack_fmpz_with_len_lll(
     // precompute the hash with the prefix applied
     fmpz_t prefixed_hash;
     fmpz_init(prefixed_hash);
-    fnv_fmpz_with_len(prefixed_hash, prefix, prefix_len, offset_basis, prime, bit_len);
+    fnv_fmpz_with_len(prefixed_hash, prefix, offset_basis, prime, bit_len);
 
     // vars used in the loop
     fmpz_t new_hash, m;
@@ -1132,7 +1099,7 @@ static CrackResult _crack_fmpz_with_len_lll(
 
     CrackResult result = FAILED;
     brute_chars_t brute = {0};
-    if (!product(&brute, brute_chars->data, brute_chars->length, brute_len)) {
+    if (!product(&brute, *brute_chars, brute_len)) {
         result = MEMORY_ERROR;
         goto cleanup;
     }
@@ -1144,9 +1111,10 @@ static CrackResult _crack_fmpz_with_len_lll(
         }
 
         const char* cur = brute.buffer + i * brute.entry_length;
+        char_buffer bruted = (char_buffer){cur, brute.entry_length};
 
         // get the hash without the prefix applied
-        fnv_fmpz_with_len(new_hash, cur, brute.entry_length, prefixed_hash, prime, bit_len);
+        fnv_fmpz_with_len(new_hash, bruted, prefixed_hash, prime, bit_len);
 
         // const uint64_t m = (new_hash * P - ntarget) & bit_mask;
         fmpz_mul(m, new_hash, P);
@@ -1183,27 +1151,23 @@ static CrackResult _crack_fmpz_with_len_lll(
         if (idx >= 0) {
             // confirm the hash is correct, false positives are possible
             fmpz_t hash; fmpz_init(hash);
-            fnv_fmpz_with_len(hash, ret_buf, nn, new_hash, prime, bit_len);
-            fnv_fmpz_with_len(hash, suffix, suffix_len, hash, prime, bit_len);
+            fnv_fmpz_with_len(hash, (char_buffer){ret_buf, nn}, new_hash, prime, bit_len);
+            fnv_fmpz_with_len(hash, suffix, hash, prime, bit_len);
 
             const bool is_eq = fmpz_equal(hash, target);
             fmpz_clear(hash);
 
             if (is_eq) {
-                char* output;
-                size_t output_len;
                 if (!_store_result_safe(
-                    prefix, prefix_len,
-                    cur, brute.entry_length,
-                    ret_buf, nn,
-                    suffix, suffix_len,
-                    &output, &output_len)) {
+                    prefix,
+                    bruted,
+                    (char_buffer){ret_buf, nn},
+                    suffix,
+                    out_buffer)) {
                     result = MEMORY_ERROR;
                     goto cleanup;
                 }
 
-                out_buffer->data = output;
-                out_buffer->length = output_len;
                 result = SUCCESS;
                 goto cleanup;
             }

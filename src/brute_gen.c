@@ -5,12 +5,12 @@
 
 static const char* const _empty = "";
 
-bool product(brute_chars_t* out, const char* brute_charset, size_t brute_charset_len, uint32_t repeat) {
+bool product(brute_chars_t* out, char_buffer brute_charset, uint32_t repeat) {
     out->buffer = NULL;
     out->entry_length = 0;
     out->total_entries = 0;
 
-    if (!repeat || !brute_charset || brute_charset_len == 0) {
+    if (!repeat || !brute_charset.data || brute_charset.length == 0) {
         out->buffer = (char*)_empty;
         out->entry_length = 0;
         out->total_entries = 1;
@@ -19,10 +19,10 @@ bool product(brute_chars_t* out, const char* brute_charset, size_t brute_charset
 
     size_t arr_size = 1;
     for (uint32_t i = 0; i < repeat; ++i) {
-        if (arr_size > SIZE_MAX / brute_charset_len) {
+        if (arr_size > SIZE_MAX / brute_charset.length) {
             return false;
         }
-        arr_size *= brute_charset_len;
+        arr_size *= brute_charset.length;
     }
 
     if (arr_size > SIZE_MAX / repeat) {
@@ -38,8 +38,8 @@ bool product(brute_chars_t* out, const char* brute_charset, size_t brute_charset
         size_t idx = entry;
         char* dst = ret_product + entry * repeat;
         for (uint32_t pos = repeat; pos > 0; --pos) {
-            dst[pos - 1] = brute_charset[idx % brute_charset_len];
-            idx /= brute_charset_len;
+            dst[pos - 1] = brute_charset.data[idx % brute_charset.length];
+            idx /= brute_charset.length;
         }
     }
 
