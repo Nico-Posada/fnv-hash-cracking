@@ -87,45 +87,12 @@ uint64_t inverse(uint64_t num, uint32_t mod_exponent) {
     }
 }
 
-/* fmpz variant */
-void _gcd_extended_fmpz(fmpz out_vals[2], const fmpz_t a, const fmpz_t b) {
-    if (fmpz_equal_ui(a, (ulong)0)) {
-        fmpz_set_ui(&out_vals[0], (ulong)0);
-        fmpz_set_ui(&out_vals[1], (ulong)1);
-        return;
-    }
-
-    fmpz new_vals[2];
-    fmpz_t tmp;
-    fmpz_init(&new_vals[0]);
-    fmpz_init(&new_vals[1]);
-    fmpz_init(tmp);
-    fmpz_mod(tmp, b, a);
-    _gcd_extended_fmpz(new_vals, tmp, a);
-
-    // x = y1 - (b//a) * x1
-    fmpz_fdiv_q(tmp, b, a);
-    fmpz_mul(tmp, tmp, &new_vals[0]);
-    fmpz_sub(tmp, &new_vals[1], tmp);
-    fmpz_set(&out_vals[0], tmp);
-    // y = x1
-    fmpz_set(&out_vals[1], &new_vals[0]);
-
-    fmpz_clear(&new_vals[0]);
-    fmpz_clear(&new_vals[1]);
-    fmpz_clear(tmp);
-}
-
 void inverse_fmpz(fmpz_t result, const fmpz_t num, const uint32_t mod_exponent) {
-    fmpz out_vals[2];
     fmpz_t MOD;
-    fmpz_init(&out_vals[0]);
-    fmpz_init(&out_vals[1]);
     fmpz_init(MOD);
     fmpz_ui_pow_ui(MOD, 2, mod_exponent);
-    _gcd_extended_fmpz(out_vals, num, MOD);
-    fmpz_mod(result, &out_vals[0], MOD);
-    fmpz_clear(&out_vals[0]);
-    fmpz_clear(&out_vals[1]);
+    if (!fmpz_invmod(result, num, MOD)) {
+        fmpz_zero(result);
+    }
     fmpz_clear(MOD);
 }
