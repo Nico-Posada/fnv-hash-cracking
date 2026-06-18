@@ -17,7 +17,12 @@ uint64_t fnv_u64_with_len(
         hash *= prime;
     }
 
-    hash &= ~(uint64_t)0 >> (64 - bits);
+    if (bits == 0) {
+        return 0;
+    }
+    if (bits < 64) {
+        hash &= ((uint64_t)1 << bits) - 1;
+    }
     return hash;
 }
 

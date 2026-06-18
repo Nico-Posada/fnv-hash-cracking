@@ -47,23 +47,26 @@ inline static int32_t _check_resulting_matrix(
         }
 
         bool success = true;
-        const int64_t lo_hsh = new_hash;
-        const int64_t lo_p = prime;
-        int64_t a = lo_hsh;
+        uint64_t a = new_hash;
 
         for (uint32_t j = 1; j < size - 1; ++j) {
-            const int64_t cur = fmpz_get_si(fmpz_mat_entry(M, i, j)) * row_last;
+            const int64_t cur = fmpz_get_si(fmpz_mat_entry(M, i, j));
 
-            const int64_t b = a;
-            a += cur;
-            const int64_t x = a ^ b;
+            const uint64_t b = a;
+            if (row_last == 1) {
+                a += (uint64_t)cur;
+            }
+            else {
+                a -= (uint64_t)cur;
+            }
+            const uint64_t x = a ^ b;
             if (x >= 256 || ctx->valid_chars[x] == 0) {
                 success = false;
                 break;
             }
 
-            ret_buf[j - 1] = x;
-            a *= lo_p;
+            ret_buf[j - 1] = (char)x;
+            a *= prime;
         }
 
         if (success) {

@@ -14,8 +14,12 @@ bool _init_common(
 ) {
     if (!set_prefix(ctx, prefix) ||
         !set_suffix(ctx, suffix) ||
-        !set_brute_chars(ctx, brute_chars))
+        !set_brute_chars(ctx, brute_chars)) {
+        set_prefix(ctx, (char_buffer){NULL, 0});
+        set_suffix(ctx, (char_buffer){NULL, 0});
+        set_brute_chars(ctx, (char_buffer){NULL, 0});
         return false;
+    }
 
     set_valid_chars(ctx, valid_chars);
     ctx->bits = bits;
@@ -32,6 +36,10 @@ bool init_crack_ctx_with_len(
     char_buffer prefix,
     char_buffer suffix
 ) {
+    if (bits == 0 || bits > 64) {
+        return false;
+    }
+
     if (!_init_common(
         ctx, bits,
         brute_chars,
@@ -78,6 +86,10 @@ bool init_crack_fmpz_ctx_with_len(
     char_buffer prefix,
     char_buffer suffix
 ) {
+    if (bits == 0) {
+        return false;
+    }
+
     if (!_init_common(
         ctx, bits,
         brute_chars,
@@ -117,13 +129,10 @@ bool init_crack_fmpz_ctx(
 }
 
 void destroy_crack_ctx(context_t ctx) {
-    if (!is_initialized(ctx)) {
-        return;
-    }
-
     if (ctx->uses_fmpz) {
         fmpz_clear(ctx->prime_fmpz);
         fmpz_clear(ctx->offset_basis_fmpz);
+        ctx->uses_fmpz = false;
     }
 
     set_prefix(ctx, (char_buffer){NULL, 0});
@@ -191,6 +200,7 @@ inline bool set_brute_chars(context_t ctx, char_buffer brute_chars) {
 
 inline void set_valid_chars(context_t ctx, char_buffer valid_chars) {
     if (valid_chars.data && valid_chars.length) {
+        memset(ctx->valid_chars, 0, sizeof(ctx->valid_chars));
         _set_table_data(ctx->valid_chars, valid_chars);
     }
     else {
