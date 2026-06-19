@@ -8,7 +8,7 @@
 #include "fnv.h"
 #include "crack.h"
 
-inline uint64_t get_time_ns() {
+static inline uint64_t get_time_ns() {
     struct timespec ts;
     clock_gettime(CLOCK_MONOTONIC, &ts);
     return (uint64_t)ts.tv_sec * 1000000000ULL + ts.tv_nsec;

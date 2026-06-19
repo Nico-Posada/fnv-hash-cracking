@@ -4,9 +4,13 @@ build/
 dist/
 ext/
 .pytest_cache/
+.coverage
 .venv/
 *.o
 *.so
+*.gcda
+*.gcno
+*.gcov
 .codex/
 AGENTS.md
 .mypy_cache/

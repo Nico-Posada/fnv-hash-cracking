@@ -26,7 +26,7 @@ typedef enum CrackResult CrackResult;
 #define CRACK_DEFAULT_MAX_ENUM_CANDIDATES 0
 
 #define ENUM_CASE(val) case val: return #val
-inline const char* const result_as_str(CrackResult result) {
+static inline const char* const result_as_str(CrackResult result) {
     switch (result) {
         ENUM_CASE(INTERRUPTED);
         ENUM_CASE(BAD_SEARCH_LENGTH);

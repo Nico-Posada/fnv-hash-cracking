@@ -7,9 +7,15 @@ from setuptools.command.build_ext import build_ext
 
 
 deps_dir = os.environ.get("FNVCRACK_DEPS")
+coverage_enabled = os.environ.get("FNVCRACK_COVERAGE") == "1"
 extra_compile_args = ["/O2"] if sys.platform == "win32" else ["-O3", "-Wall"]
+extra_link_args = []
 include_dirs = ["src"]
 library_dirs = []
+
+if coverage_enabled and sys.platform != "win32":
+    extra_compile_args = ["-O0", "-g", "--coverage", "-Wall"]
+    extra_link_args = ["--coverage"]
 
 if deps_dir:
     include_dirs.append(os.path.join(deps_dir, "include"))
@@ -42,6 +48,7 @@ fnvcrack_extension = Extension(
     libraries=["flint", "gmp", "mpfr"],
     define_macros=[("FNVCRACK_PYTHON_EXTENSION", "1")],
     extra_compile_args=extra_compile_args,
+    extra_link_args=extra_link_args,
 )
 
 

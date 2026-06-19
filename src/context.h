@@ -11,7 +11,7 @@ typedef struct _char_buffer {
     size_t length;
 } char_buffer;
 
-inline void clear_char_buffer(char_buffer* buf) {
+static inline void clear_char_buffer(char_buffer* buf) {
     if (buf->data) {
         free((void*)buf->data);
     }
