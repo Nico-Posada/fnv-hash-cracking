@@ -155,8 +155,6 @@ _ensure_uint_pylong_arg_fits(PyObject* obj, const char* const argname, uint32_t 
 
     return true;
 }
-#define _ensure_uint_pylong_arg_fits(obj, bits) _ensure_uint_pylong_arg_fits(obj, #obj, bits)
-
 static int
 _parse_uint32_arg(PyObject* obj, const char* const argname, uint32_t* result, bool optional, uint32_t default_val) {
     if (obj == NULL || Py_IsNone(obj)) {
@@ -182,16 +180,12 @@ _parse_uint32_arg(PyObject* obj, const char* const argname, uint32_t* result, bo
         return 0;
     }
 
-    long temp_val = PyLong_AsLong(obj);
-    if (temp_val == -1 && PyErr_Occurred()) {
+    if (!_ensure_uint_pylong_arg_fits(obj, argname, 32)) {
         return 0;
     }
-    if (temp_val < 0) {
-        PyErr_Format(PyExc_ValueError, "%s must be non-negative", argname);
-        return 0;
-    }
-    if (temp_val > UINT32_MAX) {
-        PyErr_Format(PyExc_OverflowError, "%s too large", argname);
+
+    unsigned long long temp_val = PyLong_AsUnsignedLongLong(obj);
+    if (temp_val == (unsigned long long)-1 && PyErr_Occurred()) {
         return 0;
     }
 
@@ -222,6 +216,10 @@ _parse_uint64_arg(PyObject* obj, const char* const argname, uint64_t* result, bo
         PyErr_Format(PyExc_TypeError,
                      "%s must be an int, got '%.200s'",
                      argname, Py_TYPE(obj)->tp_name);
+        return 0;
+    }
+
+    if (!_ensure_uint_pylong_arg_fits(obj, argname, 64)) {
         return 0;
     }
 

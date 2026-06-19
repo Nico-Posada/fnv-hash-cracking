@@ -1,5 +1,4 @@
 from . import _fnvcrack
-from .options import CrackOptions, check_uint, native_strategy, normalize_options
 from .result import CrackResult
 
 
@@ -9,6 +8,12 @@ FNV64_OFFSET_BASIS = 0xcbf29ce484222325
 FNV64_PRIME = 0x100000001b3
 """Default 64-bit FNV-1a prime."""
 
+DEFAULT_ENUM_BOUND = 4
+"""Default local enumeration radius."""
+
+DEFAULT_MAX_ENUM_CANDIDATES = 0
+"""Default candidate limit for enumeration. ``0`` means unlimited."""
+
 
 class CrackContext:
     """Configuration for cracking FNV-1a hashes.
@@ -17,7 +22,6 @@ class CrackContext:
     :param prime: FNV prime multiplier. Must be odd.
     :param bit_length: Number of hash bits to use.
     :param valid_chars: Bytes allowed in cracked output. ``None`` allows all bytes.
-    :param brute_chars: Bytes used when brute forcing part of the unknown input.
     :param prefix: Known bytes at the beginning of the input.
     :param suffix: Known bytes at the end of the input.
     """
@@ -29,7 +33,6 @@ class CrackContext:
         prime: int = FNV64_PRIME,
         bit_length: int = 64,
         valid_chars: bytes | None = None,
-        brute_chars: bytes | None = None,
         prefix: bytes = b"",
         suffix: bytes = b"",
     ) -> None:
@@ -40,7 +43,6 @@ class CrackContext:
             prefix=prefix,
             suffix=suffix,
             valid_chars=valid_chars,
-            brute_chars=brute_chars,
         )
 
     @property
@@ -73,48 +75,29 @@ class CrackContext:
         """Bytes allowed in cracked output."""
         return self._native.valid_chars
 
-    @property
-    def brute_chars(self) -> bytes:
-        """Bytes used for brute force portions of a search."""
-        return self._native.brute_chars
-
     def crack(
         self,
         target: int,
         max_len: int,
-        options: CrackOptions | None = None,
+        enum_bound: int = DEFAULT_ENUM_BOUND,
+        max_enum_candidates: int = DEFAULT_MAX_ENUM_CANDIDATES,
     ) -> CrackResult:
         """Try to find an input whose FNV-1a hash matches ``target``.
 
         :param target: Hash value to crack.
         :param max_len: Maximum number of unknown bytes to search.
-        :param options: Optional cracking strategy and search limits.
+        :param enum_bound: Search radius around the lattice solution.
+        :param max_enum_candidates: Maximum enumeration candidates. ``0`` means unlimited.
         :returns: The crack status and value, if one was found.
         :raises TypeError: If arguments have invalid types.
         :raises ValueError: If integer arguments are negative.
         :raises OverflowError: If integer arguments do not fit native limits.
         """
-        if not isinstance(target, int):
-            raise TypeError("target must be an int")
-
-        target = check_uint("target", target, self.bit_length)
-        max_len = check_uint("max_len", max_len, 32)
-        if max_len + len(self.prefix) + len(self.suffix) > (1 << 32) - 1:
-            raise OverflowError("max_len plus prefix and suffix lengths must fit in uint32")
-        normalized = normalize_options(options)
-        max_crack_len = (
-            self.bit_length // 8
-            if normalized.max_crack_len is None
-            else normalized.max_crack_len
-        )
-
         status, value = self._native.crack(
             target,
             max_len,
-            max_crack_len,
-            native_strategy(normalized.strategy),
-            normalized.enum_bound,
-            normalized.max_enum_candidates,
+            enum_bound,
+            max_enum_candidates,
         )
         return CrackResult(status=status, value=value)
 

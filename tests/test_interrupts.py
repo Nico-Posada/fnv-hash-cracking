@@ -12,18 +12,16 @@ from conftest import run_python
 class InterruptHandlingTestCase(unittest.TestCase):
     def test_python_crack_handles_sigint_from_parent_process(self):
         code = """
-            from fnvcrack import CrackContext, CrackOptions
+            from fnvcrack import CrackContext
 
             ctx = CrackContext(
                 valid_chars=b"abcdefghijklmnopqrstuvwxyz",
-                brute_chars=b"abcdefghijklmnopqrstuvwxyz",
             )
 
             try:
                 ctx.crack(
                     0x1234567890abcdef,
                     max_len=12,
-                    options=CrackOptions(max_crack_len=8),
                 )
             except KeyboardInterrupt:
                 print("python interrupt ok")
@@ -55,11 +53,10 @@ class InterruptHandlingTestCase(unittest.TestCase):
             import threading
             import time
 
-            from fnvcrack import CrackContext, CrackOptions
+            from fnvcrack import CrackContext
 
             ctx = CrackContext(
                 valid_chars=b"abcdefghijklmnopqrstuvwxyz",
-                brute_chars=b"abcdefghijklmnopqrstuvwxyz",
             )
 
             def interrupt():
@@ -74,7 +71,6 @@ class InterruptHandlingTestCase(unittest.TestCase):
                 ctx.crack(
                     0x1234567890abcdef,
                     max_len=12,
-                    options=CrackOptions(max_crack_len=8),
                 )
             except KeyboardInterrupt:
                 thread.join(timeout=1)
@@ -99,7 +95,7 @@ class InterruptHandlingTestCase(unittest.TestCase):
             import threading
             import time
 
-            from fnvcrack import CrackContext, CrackOptions
+            from fnvcrack import CrackContext
 
             def fnv(data):
                 hsh = 0xcbf29ce484222325
@@ -111,7 +107,6 @@ class InterruptHandlingTestCase(unittest.TestCase):
 
             ctx = CrackContext(
                 valid_chars=b"abcdefghijklmnopqrstuvwxyz",
-                brute_chars=b"abcdefghijklmnopqrstuvwxyz",
             )
 
             def interrupt():
@@ -121,7 +116,7 @@ class InterruptHandlingTestCase(unittest.TestCase):
             thread = threading.Thread(target=interrupt)
             thread.start()
             try:
-                ctx.crack(0x1234567890abcdef, max_len=12, options=CrackOptions(max_crack_len=8))
+                ctx.crack(0x1234567890abcdef, max_len=12)
             except KeyboardInterrupt:
                 thread.join(timeout=1)
             else:

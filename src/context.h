@@ -37,8 +37,6 @@ struct _context_s {
     char_buffer _prefix;
     // access with get_suffix
     char_buffer _suffix;
-    // access with get_brute_chars
-    char_buffer _brute_chars;
     uint8_t valid_chars[256];
     uint32_t bits;
     bool uses_fmpz;
@@ -57,7 +55,6 @@ void print_context(context_t ctx);
 
 bool set_suffix(context_t ctx, char_buffer suffix);
 bool set_prefix(context_t ctx, char_buffer prefix);
-bool set_brute_chars(context_t ctx, char_buffer brute_chars);
 void set_valid_chars(context_t ctx, char_buffer valid_chars);
 void set_offset_basis(context_t ctx, uint64_t offset_basis);
 void set_offset_basis_fmpz(context_t ctx, fmpz_t offset_basis);
@@ -69,7 +66,6 @@ void set_prime_fmpz(context_t ctx, fmpz_t prime);
 bool is_initialized(const context_t ctx);
 char_buffer* get_prefix(const context_t ctx);
 char_buffer* get_suffix(const context_t ctx);
-char_buffer* get_brute_chars(const context_t ctx);
 uint64_t get_offset_basis(const context_t ctx);
 fmpz* get_offset_basis_fmpz(const context_t ctx);
 uint64_t get_prime(const context_t ctx);
@@ -82,7 +78,6 @@ bool init_crack_ctx(
     uint64_t offset_basis,
     uint64_t prime,
     uint32_t bits,
-    const char* brute_chars,
     const char* valid_chars,
     const char* prefix,
     const char* suffix
@@ -93,7 +88,6 @@ bool init_crack_ctx_with_len(
     uint64_t offset_basis,
     uint64_t prime,
     uint32_t bits,
-    char_buffer brute_chars,
     char_buffer valid_chars,
     char_buffer prefix,
     char_buffer suffix
@@ -104,7 +98,6 @@ bool init_crack_fmpz_ctx(
     fmpz_t offset_basis,
     fmpz_t prime,
     uint32_t bits,
-    const char* brute_chars,
     const char* valid_chars,
     const char* prefix,
     const char* suffix
@@ -115,7 +108,6 @@ bool init_crack_fmpz_ctx_with_len(
     fmpz_t offset_basis,
     fmpz_t prime,
     uint32_t bits,
-    char_buffer brute_chars,
     char_buffer valid_chars,
     char_buffer prefix,
     char_buffer suffix

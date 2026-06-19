@@ -14,7 +14,6 @@ class SubprocessSafetyTestCase(unittest.TestCase):
                     prefix=b"pre",
                     suffix=b"suf",
                     valid_chars=b"abcdefghijklmnopqrstuvwxyz",
-                    brute_chars=b"abc",
                 )
 
             print("ok")
@@ -124,69 +123,4 @@ class SubprocessSafetyTestCase(unittest.TestCase):
 
         self.assertEqual(returncode, 0)
         self.assertEqual(stdout.strip(), "BAD_SEARCH_LENGTH")
-        self.assertEqual(stderr, "")
-
-    def test_bruteforce_product_oom_returns_memory_error(self):
-        returncode, stdout, stderr = run_python(
-            """
-            import resource
-
-            from fnvcrack import CrackContext, CrackOptions, CrackStrategy
-
-            brute_chars = b"\\x00" * (256 * 1024)
-            ctx = CrackContext(brute_chars=brute_chars, valid_chars=b"\\x00")
-
-            with open("/proc/self/statm") as f:
-                pages = int(f.read().split()[0])
-
-            current = pages * resource.getpagesize()
-            soft = current + 128 * 1024
-            _, hard = resource.getrlimit(resource.RLIMIT_AS)
-            if hard != resource.RLIM_INFINITY:
-                soft = min(soft, hard)
-
-            resource.setrlimit(resource.RLIMIT_AS, (soft, hard))
-            result = ctx.crack(
-                0,
-                max_len=1,
-                options=CrackOptions(
-                    strategy=CrackStrategy.ENUMERATE,
-                    max_crack_len=0,
-                ),
-            )
-            print(result.status_name)
-            """,
-            timeout=10,
-        )
-
-        self.assertEqual(returncode, 0)
-        self.assertEqual(stdout.strip(), "MEMORY_ERROR")
-        self.assertEqual(stderr, "")
-
-    def test_large_bruteforce_length_does_not_overflow_stack(self):
-        returncode, stdout, stderr = run_python(
-            """
-            import resource
-
-            from fnvcrack import CrackContext, CrackOptions
-
-            soft = 32 * 1024
-            _, hard = resource.getrlimit(resource.RLIMIT_STACK)
-            if hard != resource.RLIM_INFINITY:
-                soft = min(soft, hard)
-
-            resource.setrlimit(resource.RLIMIT_STACK, (soft, hard))
-            ctx = CrackContext(brute_chars=b"a")
-            result = ctx.crack(
-                0,
-                max_len=30000,
-                options=CrackOptions(max_crack_len=0),
-            )
-            print(result.status_name)
-            """,
-            timeout=10,
-        )
-
-        self.assertEqual(returncode, 0)
-        self.assertIn(stdout.strip(), {"FAILED", "SUCCESS"})
         self.assertEqual(stderr, "")

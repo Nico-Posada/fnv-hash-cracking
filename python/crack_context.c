@@ -55,8 +55,7 @@ CrackContext_new(PyTypeObject* type, PyObject* args, PyObject* kwds) {
             * bit_length = NULL,
             * prefix = NULL,
             * suffix = NULL,
-            * valid_chars = NULL,
-            * brute_chars = NULL;
+            * valid_chars = NULL;
 
     bool failed = true;
     PyObject* result = NULL;
@@ -68,7 +67,6 @@ CrackContext_new(PyTypeObject* type, PyObject* args, PyObject* kwds) {
         "prefix",
         "suffix",
         "valid_chars",
-        "brute_chars",
         NULL
     };
 
@@ -77,9 +75,9 @@ CrackContext_new(PyTypeObject* type, PyObject* args, PyObject* kwds) {
         return NULL;
     }
 
-    if (!PyArg_ParseTupleAndKeywords(args, kwds, "|OOOOOOO", kwlist,
+    if (!PyArg_ParseTupleAndKeywords(args, kwds, "|OOOOOO", kwlist,
                                      &offset_basis, &prime, &bit_length, &prefix,
-                                     &suffix, &valid_chars, &brute_chars)) {
+                                     &suffix, &valid_chars)) {
         Py_DECREF(self);
         return NULL;
     }
@@ -103,11 +101,9 @@ CrackContext_new(PyTypeObject* type, PyObject* args, PyObject* kwds) {
     Py_buffer prefix_view = {NULL};
     Py_buffer suffix_view = {NULL};
     Py_buffer valid_chars_view = {NULL};
-    Py_buffer brute_chars_view = {NULL};
     GET_BUFFER_OBJ_SAFE(prefix, prefix_view, goto fail_buffers);
     GET_BUFFER_OBJ_SAFE(suffix, suffix_view, goto fail_buffers);
     GET_BUFFER_OBJ_SAFE(valid_chars, valid_chars_view, goto fail_buffers);
-    GET_BUFFER_OBJ_SAFE(brute_chars, brute_chars_view, goto fail_buffers);
 
     // normalize int args
     PyObject* new_offset_basis = NULL, * new_prime = NULL;
@@ -158,7 +154,6 @@ CrackContext_new(PyTypeObject* type, PyObject* args, PyObject* kwds) {
             u64_offset_basis,
             u64_prime,
             bits,
-            BUFFER_ARG(brute_chars),
             BUFFER_ARG(valid_chars),
             BUFFER_ARG(prefix),
             BUFFER_ARG(suffix)
@@ -188,7 +183,6 @@ CrackContext_new(PyTypeObject* type, PyObject* args, PyObject* kwds) {
             fmpz_offset_basis,
             fmpz_prime,
             bits,
-            BUFFER_ARG(brute_chars),
             BUFFER_ARG(valid_chars),
             BUFFER_ARG(prefix),
             BUFFER_ARG(suffix)
@@ -216,7 +210,6 @@ fail_buffers:
     CLEAR_BUFFER_OBJ_SAFE(prefix_view);
     CLEAR_BUFFER_OBJ_SAFE(suffix_view);
     CLEAR_BUFFER_OBJ_SAFE(valid_chars_view);
-    CLEAR_BUFFER_OBJ_SAFE(brute_chars_view);
 
     if (failed) {
         Py_DECREF(self);
@@ -251,11 +244,6 @@ CrackContext_get_bit_length(CrackContext *self, PyObject *Py_UNUSED(ignored)) {
 }
 
 PyObject*
-CrackContext_get_brute_chars(CrackContext *self, PyObject *Py_UNUSED(ignored)) {
-    return _char_buffer_to_pyobj(get_brute_chars(self->ctx));
-}
-
-PyObject*
 CrackContext_get_valid_chars(CrackContext *self, PyObject *Py_UNUSED(ignored)) {
     uint32_t bytes_needed = 0;
     uint8_t result[256];
@@ -275,10 +263,8 @@ inline static bool _check_equal(context_t lhs, context_t rhs) {
         lhs->bits != rhs->bits ||
         get_prefix(lhs)->length != get_prefix(rhs)->length ||
         get_suffix(lhs)->length != get_suffix(rhs)->length ||
-        get_brute_chars(lhs)->length != get_brute_chars(rhs)->length ||
         memcmp(get_prefix(lhs)->data, get_prefix(rhs)->data, get_prefix(lhs)->length) != 0 ||
         memcmp(get_suffix(lhs)->data, get_suffix(rhs)->data, get_suffix(lhs)->length) != 0 ||
-        memcmp(get_brute_chars(lhs)->data, get_brute_chars(rhs)->data, get_brute_chars(lhs)->length) != 0 ||
         memcmp(lhs->valid_chars, rhs->valid_chars, 256) != 0
     ) {
         return false;
@@ -319,8 +305,7 @@ CrackContext_repr(CrackContext* self) {
             * offset_basis = NULL,
             * prefix = NULL,
             * suffix = NULL,
-            * valid_chars = NULL,
-            * brute_chars = NULL;
+            * valid_chars = NULL;
 
     PyObject* result = NULL;
     prime = CrackContext_get_prime(self, NULL);
@@ -333,19 +318,16 @@ CrackContext_repr(CrackContext* self) {
     if (!suffix) goto finish;
     valid_chars = CrackContext_get_valid_chars(self, NULL);
     if (!valid_chars) goto finish;
-    brute_chars = CrackContext_get_brute_chars(self, NULL);
-    if (!brute_chars) goto finish;
 
     result = PyUnicode_FromFormat(
         "CrackContext(prime=%R, offset_basis=%R, bit_length=%u, prefix=%R, "
-        "suffix=%R, valid_chars=%R, brute_chars=%R)",
+        "suffix=%R, valid_chars=%R)",
         prime,
         offset_basis,
         self->ctx->bits,
         prefix,
         suffix,
-        valid_chars,
-        brute_chars
+        valid_chars
     );
 
 finish:
@@ -354,7 +336,6 @@ finish:
     Py_XDECREF(prefix);
     Py_XDECREF(suffix);
     Py_XDECREF(valid_chars);
-    Py_XDECREF(brute_chars);
 
     return result;
 }
@@ -364,8 +345,6 @@ CrackContext_crack(CrackContext* self, PyObject *args, PyObject *kwds) {
     static char* kwlist[] = {
         "target",
         "max_len",
-        "max_crack_len",
-        "strategy",
         "enum_bound",
         "max_enum_candidates",
         NULL
@@ -373,14 +352,11 @@ CrackContext_crack(CrackContext* self, PyObject *args, PyObject *kwds) {
 
     PyObject* target = NULL,
             * max_len_obj = NULL,
-            * max_crack_len_obj = NULL,
-            * strategy_obj = NULL,
             * enum_bound_obj = NULL,
             * max_enum_candidates_obj = NULL;
 
-    if (!PyArg_ParseTupleAndKeywords(args, kwds, "OOOOOO", kwlist,
-                                     &target, &max_len_obj, &max_crack_len_obj,
-                                     &strategy_obj, &enum_bound_obj,
+    if (!PyArg_ParseTupleAndKeywords(args, kwds, "OOOO", kwlist,
+                                     &target, &max_len_obj, &enum_bound_obj,
                                      &max_enum_candidates_obj)) {
         return NULL;
     }
@@ -398,29 +374,19 @@ CrackContext_crack(CrackContext* self, PyObject *args, PyObject *kwds) {
                      Py_TYPE(target)->tp_name);
         return NULL;
     }
-    if (!_ensure_uint_pylong_arg_fits(target, self->ctx->bits)) {
+    if (!_ensure_uint_pylong_arg_fits(target, "target", self->ctx->bits)) {
         return NULL;
     }
 
-    uint32_t max_len, max_crack, strategy, enum_bound;
+    uint32_t max_len, enum_bound;
     uint64_t max_enum_candidates;
     if (!_parse_uint32_arg(max_len_obj, &max_len, false, 0)) {
-        return NULL;
-    }
-    if (!_parse_uint32_arg(max_crack_len_obj, &max_crack, false, 0)) {
-        return NULL;
-    }
-    if (!_parse_uint32_arg(strategy_obj, &strategy, false, 0)) {
-        return NULL;
-    }
-    if (strategy != CRACK_STRATEGY_LLL && strategy != CRACK_STRATEGY_ENUMERATE) {
-        PyErr_SetString(PyExc_ValueError, "strategy must be CRACK_STRATEGY_LLL or CRACK_STRATEGY_ENUMERATE");
         return NULL;
     }
     if (!_parse_uint32_arg(enum_bound_obj, &enum_bound, false, CRACK_DEFAULT_ENUM_BOUND)) {
         return NULL;
     }
-    if (!_parse_uint64_arg(max_enum_candidates_obj, &max_enum_candidates, false, 0)) {
+    if (!_parse_uint64_arg(max_enum_candidates_obj, &max_enum_candidates, false, CRACK_DEFAULT_MAX_ENUM_CANDIDATES)) {
         return NULL;
     }
     const size_t known_len = get_prefix(self->ctx)->length + get_suffix(self->ctx)->length;
@@ -429,12 +395,6 @@ CrackContext_crack(CrackContext* self, PyObject *args, PyObject *kwds) {
                         "max_len plus prefix and suffix lengths must fit in uint32");
         return NULL;
     }
-
-    crack_options_t options = {
-        .strategy = (CrackStrategy)strategy,
-        .enum_bound = enum_bound,
-        .max_enum_candidates = max_enum_candidates,
-    };
 
     char_buffer output = { NULL, 0 };
     CrackResult crack_result;
@@ -454,7 +414,14 @@ CrackContext_crack(CrackContext* self, PyObject *args, PyObject *kwds) {
         }
 
         FNVCRACK_BEGIN_ALLOW_THREADS
-        crack_result = crack_fmpz_options(self->ctx, target_fmpz, &output, max_len, max_crack, &options);
+        crack_result = crack_fmpz_limits(
+            self->ctx,
+            target_fmpz,
+            &output,
+            max_len,
+            enum_bound,
+            max_enum_candidates
+        );
         FNVCRACK_END_ALLOW_THREADS
         fmpz_clear(target_fmpz);
     }
@@ -467,7 +434,14 @@ CrackContext_crack(CrackContext* self, PyObject *args, PyObject *kwds) {
         }
 
         FNVCRACK_BEGIN_ALLOW_THREADS
-        crack_result = crack_u64_options(self->ctx, target_u64, &output, max_len, max_crack, &options);
+        crack_result = crack_u64_limits(
+            self->ctx,
+            target_u64,
+            &output,
+            max_len,
+            enum_bound,
+            max_enum_candidates
+        );
         FNVCRACK_END_ALLOW_THREADS
     }
     fnvcrack_restore_interrupt_handler();

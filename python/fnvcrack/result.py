@@ -14,9 +14,6 @@ class CrackStatus(IntEnum):
     CONTEXT_UNINITIALIZED = -4
     """The native context was not initialized."""
 
-    MISSING_BRUTE_CHARS = -3
-    """A brute force search was requested without brute force characters."""
-
     MEMORY_ERROR = -2
     """Native code failed to allocate required memory."""
 

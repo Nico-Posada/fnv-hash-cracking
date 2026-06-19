@@ -7,17 +7,14 @@
 bool _init_common(
     context_t ctx,
     uint32_t bits,
-    char_buffer brute_chars,
     char_buffer valid_chars,
     char_buffer prefix,
     char_buffer suffix
 ) {
     if (!set_prefix(ctx, prefix) ||
-        !set_suffix(ctx, suffix) ||
-        !set_brute_chars(ctx, brute_chars)) {
+        !set_suffix(ctx, suffix)) {
         set_prefix(ctx, (char_buffer){NULL, 0});
         set_suffix(ctx, (char_buffer){NULL, 0});
-        set_brute_chars(ctx, (char_buffer){NULL, 0});
         return false;
     }
 
@@ -31,7 +28,6 @@ bool init_crack_ctx_with_len(
     uint64_t offset_basis,
     uint64_t prime,
     uint32_t bits,
-    char_buffer brute_chars,
     char_buffer valid_chars,
     char_buffer prefix,
     char_buffer suffix
@@ -42,7 +38,6 @@ bool init_crack_ctx_with_len(
 
     if (!_init_common(
         ctx, bits,
-        brute_chars,
         valid_chars,
         prefix,
         suffix
@@ -62,14 +57,12 @@ bool init_crack_ctx(
     uint64_t offset_basis,
     uint64_t prime,
     uint32_t bits,
-    const char* brute_chars,
     const char* valid_chars,
     const char* prefix,
     const char* suffix
 ) {
     return init_crack_ctx_with_len(
         ctx, offset_basis, prime, bits,
-        (char_buffer){brute_chars, brute_chars ? strlen(brute_chars) : 0},
         (char_buffer){valid_chars, valid_chars ? strlen(valid_chars) : 0},
         (char_buffer){prefix, prefix ? strlen(prefix) : 0},
         (char_buffer){suffix, suffix ? strlen(suffix) : 0}
@@ -81,7 +74,6 @@ bool init_crack_fmpz_ctx_with_len(
     fmpz_t offset_basis,
     fmpz_t prime,
     uint32_t bits,
-    char_buffer brute_chars,
     char_buffer valid_chars,
     char_buffer prefix,
     char_buffer suffix
@@ -92,7 +84,6 @@ bool init_crack_fmpz_ctx_with_len(
 
     if (!_init_common(
         ctx, bits,
-        brute_chars,
         valid_chars,
         prefix,
         suffix
@@ -114,14 +105,12 @@ bool init_crack_fmpz_ctx(
     fmpz_t offset_basis,
     fmpz_t prime,
     uint32_t bits,
-    const char* brute_chars,
     const char* valid_chars,
     const char* prefix,
     const char* suffix
 ) {
     return init_crack_fmpz_ctx_with_len(
         ctx, offset_basis, prime, bits,
-        (char_buffer){brute_chars, brute_chars ? strlen(brute_chars) : 0},
         (char_buffer){valid_chars, valid_chars ? strlen(valid_chars) : 0},
         (char_buffer){prefix, prefix ? strlen(prefix) : 0},
         (char_buffer){suffix, suffix ? strlen(suffix) : 0}
@@ -137,7 +126,6 @@ void destroy_crack_ctx(context_t ctx) {
 
     set_prefix(ctx, (char_buffer){NULL, 0});
     set_suffix(ctx, (char_buffer){NULL, 0});
-    set_brute_chars(ctx, (char_buffer){NULL, 0});
     set_offset_basis(ctx, 0);
     set_prime(ctx, 0);
     memset(ctx->valid_chars, 0, sizeof(ctx->valid_chars));
@@ -194,10 +182,6 @@ inline bool set_prefix(context_t ctx, char_buffer prefix) {
     return _set_str_ref(get_prefix(ctx), prefix);
 }
 
-inline bool set_brute_chars(context_t ctx, char_buffer brute_chars) {
-    return _set_str_ref(get_brute_chars(ctx), brute_chars);
-}
-
 inline void set_valid_chars(context_t ctx, char_buffer valid_chars) {
     if (valid_chars.data && valid_chars.length) {
         memset(ctx->valid_chars, 0, sizeof(ctx->valid_chars));
@@ -237,10 +221,6 @@ inline char_buffer* get_prefix(const context_t ctx) {
 
 inline char_buffer* get_suffix(const context_t ctx) {
     return (char_buffer*)&ctx->_suffix;
-}
-
-inline char_buffer* get_brute_chars(const context_t ctx) {
-    return (char_buffer*)&ctx->_brute_chars;
 }
 
 inline uint64_t get_offset_basis(const context_t ctx) {
@@ -311,11 +291,6 @@ void print_context(context_t ctx) {
     printf("\"\nsuffix=b\"");
     for (size_t i = 0; i < get_suffix(ctx)->length; ++i) {
         _fill_hex_char(_tmp_buf, (uint8_t)get_suffix(ctx)->data[i]);
-        printf("%s", _tmp_buf);
-    }
-    printf("\"\nbrute_chars=b\"");
-    for (size_t i = 0; i < get_brute_chars(ctx)->length; ++i) {
-        _fill_hex_char(_tmp_buf, (uint8_t)get_brute_chars(ctx)->data[i]);
         printf("%s", _tmp_buf);
     }
     printf("\"\nvalid_chars=b\"");

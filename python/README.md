@@ -41,7 +41,7 @@ done
 ## Usage
 
 ```python
-from fnvcrack import CrackContext, CrackOptions, CrackStrategy
+from fnvcrack import CrackContext
 
 ctx = CrackContext(valid_chars=b"abcdefghijklmnopqrstuvwxyz")
 result = ctx.crack(target_hash, max_len=8)
@@ -50,15 +50,14 @@ if result.ok:
     print(result.value)
 ```
 
-Use ENUMERATE when you want a slower but more complete search:
+Tune enumeration when you want a wider local search:
 
 ```python
-options = CrackOptions(
-    strategy=CrackStrategy.ENUMERATE,
+result = ctx.crack(
+    target_hash,
+    max_len=12,
     enum_bound=4,
 )
-
-result = ctx.crack(target_hash, max_len=12, options=options)
 ```
 
 `enum_bound` controls the local lattice search radius around the solver guess.
@@ -73,24 +72,12 @@ CrackContext(
     prime=0x100000001b3,
     bit_length=64,
     valid_chars=None,
-    brute_chars=None,
     prefix=b"",
     suffix=b"",
 )
 ```
 
-```python
-CrackOptions(
-    strategy=CrackStrategy.LLL,
-    enum_bound=4,
-    max_enum_candidates=0,
-    max_crack_len=None,
-)
-```
-
 `max_enum_candidates=0` means unlimited.
-
-`max_crack_len=None` defaults to `bit_length // 8`.
 
 `ctx.crack(...)` returns a `CrackResult`:
 

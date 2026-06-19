@@ -8,7 +8,6 @@
 
 #include "context.h"
 #include "inverse.h"
-#include "brute_gen.h"
 #include "fnv.h"
 #include "crack.h"
 
@@ -32,7 +31,6 @@ static PyGetSetDef Custom_getsetters[] = {
     {"suffix", (getter)CrackContext_get_suffix, (setter)NULL, PyDoc_STR("Suffix"), NULL},
     {"bit_length", (getter)CrackContext_get_bit_length, (setter)NULL, PyDoc_STR("Value used to calculate the modulus (2 ^ bit_length)"), NULL},
     {"valid_chars", (getter)CrackContext_get_valid_chars, (setter)NULL, PyDoc_STR("Characters that should exist in the crack result"), NULL},
-    {"brute_chars", (getter)CrackContext_get_brute_chars, (setter)NULL, PyDoc_STR("Characters will be used when doing the partial brute force"), NULL},
     {NULL}  /* Sentinel */
 };
 

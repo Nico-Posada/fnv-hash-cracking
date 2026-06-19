@@ -10,12 +10,17 @@ readme = "python/README.md"
 requires-python = ">=3.11"
 
 [dependency-groups]
-dev = ["pytest"]
+dev = ["pytest", "pytest-cov"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 python_files = ["test_*.py"]
 python_classes = ["*TestCase"]
+addopts = [
+    "--cov=fnvcrack",
+    "--cov-report=term-missing",
+    "--cov-fail-under=100",
+]
 
 [tool.bumpversion]
 parse = "(?P<major>\\d+)\\.(?P<minor>\\d+)\\.(?P<patch>\\d+)"

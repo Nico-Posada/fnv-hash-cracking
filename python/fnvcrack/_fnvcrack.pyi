@@ -20,7 +20,6 @@ class NativeContext:
     :param prefix: Known bytes at the beginning of the input.
     :param suffix: Known bytes at the end of the input.
     :param valid_chars: Bytes allowed in cracked output. ``None`` allows all bytes.
-    :param brute_chars: Bytes used when brute forcing part of the unknown input.
     """
 
     def __init__(
@@ -32,7 +31,6 @@ class NativeContext:
         prefix: _Buffer | None = ...,
         suffix: _Buffer | None = ...,
         valid_chars: _Buffer | None = ...,
-        brute_chars: _Buffer | None = ...,
     ) -> None: ...
 
     @property
@@ -65,17 +63,10 @@ class NativeContext:
         """Bytes allowed in cracked output."""
         ...
 
-    @property
-    def brute_chars(self) -> bytes:
-        """Bytes used for brute force portions of a search."""
-        ...
-
     def crack(
         self,
         target: int,
         max_len: int,
-        max_crack_len: int,
-        strategy: int,
         enum_bound: int,
         max_enum_candidates: int,
     ) -> tuple[int, bytes | None]:
@@ -83,9 +74,7 @@ class NativeContext:
 
         :param target: Hash value to crack.
         :param max_len: Maximum number of unknown bytes to search.
-        :param max_crack_len: Maximum bytes solved without brute force.
-        :param strategy: Native strategy id.
-        :param enum_bound: Search radius for the enumerate strategy.
+        :param enum_bound: Search radius around the lattice solution.
         :param max_enum_candidates: Maximum enumeration candidates. ``0`` means unlimited.
         :returns: A ``(status, value)`` pair.
         """

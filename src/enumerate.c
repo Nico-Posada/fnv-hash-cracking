@@ -9,6 +9,8 @@
 typedef struct {
     const fmpz_mat_struct* basis;
     const fmpz_mat_struct* tail_abs;
+    const fmpz_mat_struct* fit_min;
+    const fmpz_mat_struct* fit_max;
     fmpz_mat_struct* current;
     const int64_t* lower_bounds;
     const int64_t* upper_bounds;
@@ -170,38 +172,42 @@ static void _build_tail_abs(fmpz_mat_t tail_abs, const fmpz_mat_t basis, uint32_
     fmpz_clear(tmp);
 }
 
-static bool _can_still_fit(const enum_search_t* ctx, uint32_t depth) {
-    fmpz_t lo, hi;
-    fmpz_init(lo);
-    fmpz_init(hi);
+static void _build_fit_bounds(
+    fmpz_mat_t fit_min,
+    fmpz_mat_t fit_max,
+    const fmpz_mat_t tail_abs,
+    const int64_t* lower_bounds,
+    const int64_t* upper_bounds
+) {
+    const slong rows = fmpz_mat_nrows(tail_abs);
+    const slong cols = fmpz_mat_ncols(tail_abs);
 
+    for (slong i = 0; i < rows; ++i) {
+        for (slong j = 0; j < cols; ++j) {
+            fmpz_set_si(fmpz_mat_entry(fit_min, i, j), lower_bounds[j]);
+            fmpz_sub(fmpz_mat_entry(fit_min, i, j), fmpz_mat_entry(fit_min, i, j), fmpz_mat_entry(tail_abs, i, j));
+
+            fmpz_set_si(fmpz_mat_entry(fit_max, i, j), upper_bounds[j]);
+            fmpz_add(fmpz_mat_entry(fit_max, i, j), fmpz_mat_entry(fit_max, i, j), fmpz_mat_entry(tail_abs, i, j));
+        }
+    }
+}
+
+static bool _can_still_fit(enum_search_t* ctx, uint32_t depth) {
     for (uint32_t j = 0; j < ctx->dim; ++j) {
         const fmpz* cur = fmpz_mat_entry(ctx->current, 0, j);
-        const fmpz* rem = fmpz_mat_entry(ctx->tail_abs, depth, j);
-
-        fmpz_sub(lo, cur, rem);
-        fmpz_add(hi, cur, rem);
-        if (fmpz_cmp_si(hi, ctx->lower_bounds[j]) < 0 ||
-            fmpz_cmp_si(lo, ctx->upper_bounds[j]) > 0) {
-            fmpz_clear(hi);
-            fmpz_clear(lo);
+        if (fmpz_cmp(cur, fmpz_mat_entry(ctx->fit_min, depth, j)) < 0 ||
+            fmpz_cmp(cur, fmpz_mat_entry(ctx->fit_max, depth, j)) > 0) {
             return false;
         }
     }
 
-    fmpz_clear(hi);
-    fmpz_clear(lo);
     return true;
 }
 
 static bool _emit_candidate(enum_search_t* ctx) {
     for (uint32_t j = 0; j < ctx->dim; ++j) {
-        const fmpz* cur = fmpz_mat_entry(ctx->current, 0, j);
-        if (fmpz_cmp_si(cur, ctx->lower_bounds[j]) < 0 ||
-            fmpz_cmp_si(cur, ctx->upper_bounds[j]) > 0) {
-            return false;
-        }
-        ctx->deltas[j] = fmpz_get_si(cur);
+        ctx->deltas[j] = fmpz_get_si(fmpz_mat_entry(ctx->current, 0, j));
     }
 
     ++ctx->candidates;
@@ -256,19 +262,23 @@ static void _search(enum_search_t* ctx, uint32_t depth) {
     }
 
     const uint32_t width = ctx->enum_bound * 2 + 1;
+    int64_t prev_off = 0;
     for (uint32_t i = 0; i < width; ++i) {
         const int64_t off = _offset_for_index(i);
-        _add_basis_row(ctx, depth, off);
+        _add_basis_row(ctx, depth, off - prev_off);
+        prev_off = off;
 
         if (_can_still_fit(ctx, depth + 1)) {
             _search(ctx, depth + 1);
         }
 
-        _add_basis_row(ctx, depth, -off);
         if (ctx->found || ctx->hit_limit || ctx->interrupted) {
+            _add_basis_row(ctx, depth, -prev_off);
             return;
         }
     }
+
+    _add_basis_row(ctx, depth, -prev_off);
 }
 
 enumerate_solver_result enumerate_bounded_mod(
@@ -309,7 +319,8 @@ enumerate_solver_result enumerate_bounded_mod(
         return ENUMERATE_SOLVER_DONE;
     }
 
-    fmpz_mat_t solution, basis, reduced, transform, target, coords, closest, base, tail_abs;
+    fmpz_mat_t solution, basis, reduced, transform, target, coords, closest, base;
+    fmpz_mat_t tail_abs, fit_min, fit_max;
     fmpz_mat_init(solution, 1, n);
     fmpz_mat_init(basis, n, n);
     fmpz_mat_init(reduced, n, n);
@@ -319,6 +330,8 @@ enumerate_solver_result enumerate_bounded_mod(
     fmpz_mat_init(closest, 1, n);
     fmpz_mat_init(base, 1, n);
     fmpz_mat_init(tail_abs, n + 1, n);
+    fmpz_mat_init(fit_min, n + 1, n);
+    fmpz_mat_init(fit_max, n + 1, n);
     enumerate_solver_result result = ENUMERATE_SOLVER_DONE;
 
     fmpz_mod(rhs_mod, rhs, modulus);
@@ -365,10 +378,13 @@ enumerate_solver_result enumerate_bounded_mod(
 
     _sort_rows_desc(reduced);
     _build_tail_abs(tail_abs, reduced, enum_bound);
+    _build_fit_bounds(fit_min, fit_max, tail_abs, lower_bounds, upper_bounds);
 
     enum_search_t search_ctx = {
         .basis = reduced,
         .tail_abs = tail_abs,
+        .fit_min = fit_min,
+        .fit_max = fit_max,
         .current = base,
         .lower_bounds = lower_bounds,
         .upper_bounds = upper_bounds,
@@ -399,6 +415,8 @@ enumerate_solver_result enumerate_bounded_mod(
     }
 
 cleanup:
+    fmpz_mat_clear(fit_max);
+    fmpz_mat_clear(fit_min);
     fmpz_mat_clear(tail_abs);
     fmpz_mat_clear(base);
     fmpz_mat_clear(closest);

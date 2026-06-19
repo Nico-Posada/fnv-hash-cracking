@@ -5,7 +5,6 @@
 
 #include "context.h"
 #include "inverse.h"
-#include "brute_gen.h"
 #include "fnv.h"
 #include "crack.h"
 
@@ -25,8 +24,6 @@ void run_64_bit_crack() {
         0x100000001B3,
         // max value (2^x), 64 bits should be the most common one you'll see
         64,
-        // brute chars
-        "abcdefghijklmnopqrstuvwxyz",
         // valid chars
         "abcdefghijklmnopqrstuvwxyz",
         // known prefix
@@ -43,7 +40,7 @@ void run_64_bit_crack() {
 
     char_buffer buf = {NULL, 0};
     const uint64_t start = get_time_ns();
-    CrackResult ret = crack_u64_with_len(ctx, hashed, &buf, 13, 2);
+    CrackResult ret = crack_u64_with_len(ctx, hashed, &buf, 13);
     const uint64_t end = get_time_ns();
     printf("result: %s\nstr: %s\ntime: %.4lf\n", result_as_str(ret), buf.data ? buf.data : "(failed)", (end - start) / 1000000000.0);
     clear_char_buffer(&buf);
@@ -67,8 +64,6 @@ void run_320_bit_crack() {
         offset_basis,
         prime,
         320,
-        // brute chars
-        "0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ!\"#$%&\'()*+,-./:;<=>?@[\\]^_`{|}~ ",
         // valid chars
         "0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ!\"#$%&\'()*+,-./:;<=>?@[\\]^_`{|}~ ",
         // known prefix, known suffix (challenge uses bytes_to_long so the string will be backwards)
@@ -78,7 +73,7 @@ void run_320_bit_crack() {
     // set up the char buffer and try cracking
     char_buffer buf = {NULL, 0};
     const uint64_t start = get_time_ns();
-    CrackResult ret = crack_fmpz_with_len(ctx, hashed, &buf, 37, 0);
+    CrackResult ret = crack_fmpz_with_len(ctx, hashed, &buf, 37);
     const uint64_t end = get_time_ns();
 
     // print results (output string will be reversed because it used bytes_to_long on it in the challenge)
@@ -94,7 +89,7 @@ void run_320_bit_crack() {
 
 void run_64_bit_unk() {
     CREATE_CONTEXT(ctx);
-    if (!init_crack_ctx(ctx, 0xCBF29CE484222325, 0x100000001B3, 64, "abcdefghijklmnopqrstuvwxyz", "abcdefghijklmnopqrstuvwxyz", "qqq", NULL)) {
+    if (!init_crack_ctx(ctx, 0xCBF29CE484222325, 0x100000001B3, 64, "abcdefghijklmnopqrstuvwxyz", "qqq", NULL)) {
         printf("Failed to initialize ctx in run_64_bit_crack\n");
         return;
     }
@@ -104,7 +99,7 @@ void run_64_bit_unk() {
 
     char_buffer buf = {NULL, 0};
     const uint64_t start = get_time_ns();
-    CrackResult ret = crack_u64(ctx, hashed, &buf, 10, 8);
+    CrackResult ret = crack_u64(ctx, hashed, &buf, 10);
     const uint64_t end = get_time_ns();
     printf("result: %s\nstr: %s\ntime: %.4lf\n", result_as_str(ret), buf.data ? buf.data : "(failed)", (end - start) / 1000000000.0);
     clear_char_buffer(&buf);

@@ -18,7 +18,6 @@ class ContextApiTestCase(unittest.TestCase):
         self.assertEqual(ctx.bit_length, 64)
         self.assertEqual(ctx.prefix, b"")
         self.assertEqual(ctx.suffix, b"")
-        self.assertEqual(ctx.brute_chars, b"")
         self.assertEqual(ctx.valid_chars, FULL_BYTES)
         self.assertEqual(DEFAULT_ENUM_BOUND, 4)
 
@@ -33,7 +32,6 @@ class ContextApiTestCase(unittest.TestCase):
             prefix=None,
             suffix=None,
             valid_chars=None,
-            brute_chars=None,
         )
 
         self.assertEqual(ctx.offset_basis, FNV64_OFFSET_BASIS)
@@ -42,7 +40,6 @@ class ContextApiTestCase(unittest.TestCase):
         self.assertEqual(ctx.prefix, b"")
         self.assertEqual(ctx.suffix, b"")
         self.assertEqual(ctx.valid_chars, FULL_BYTES)
-        self.assertEqual(ctx.brute_chars, b"")
 
     def test_valid_chars_are_unique_and_ordered(self):
         ctx = CrackContext(valid_chars=b"baba\xff\x00")
@@ -52,50 +49,44 @@ class ContextApiTestCase(unittest.TestCase):
         ctx = CrackContext(
             prefix=b"pre\x00fix",
             suffix=b"suf\x00fix",
-            brute_chars=b"a\x00b",
         )
 
         self.assertEqual(ctx.prefix, b"pre\x00fix")
         self.assertEqual(ctx.suffix, b"suf\x00fix")
-        self.assertEqual(ctx.brute_chars, b"a\x00b")
 
     def test_context_copies_buffer_inputs(self):
         prefix = bytearray(b"pre")
         suffix = bytearray(b"suf")
         valid_chars = bytearray(LOWER)
-        brute_chars = bytearray(b"abc")
 
         ctx = CrackContext(
             prefix=prefix,
             suffix=memoryview(suffix),
             valid_chars=memoryview(valid_chars),
-            brute_chars=brute_chars,
         )
 
         prefix[:] = b"xxx"
         suffix[:] = b"yyy"
         valid_chars[:] = b"z" * len(valid_chars)
-        brute_chars[:] = b"zzz"
 
         self.assertEqual(ctx.prefix, b"pre")
         self.assertEqual(ctx.suffix, b"suf")
         self.assertEqual(ctx.valid_chars, LOWER)
-        self.assertEqual(ctx.brute_chars, b"abc")
 
     def test_rejects_str_buffers(self):
-        for name in ("prefix", "suffix", "valid_chars", "brute_chars"):
+        for name in ("prefix", "suffix", "valid_chars"):
             with self.subTest(name=name):
                 with self.assertRaises(TypeError):
                     CrackContext(**{name: "abc"})
 
     def test_rejects_non_buffer_objects(self):
-        for name in ("prefix", "suffix", "valid_chars", "brute_chars"):
+        for name in ("prefix", "suffix", "valid_chars"):
             with self.subTest(name=name):
                 with self.assertRaises(TypeError):
                     CrackContext(**{name: 123})
 
     def test_rejects_non_contiguous_buffer_objects(self):
-        for name in ("prefix", "suffix", "valid_chars", "brute_chars"):
+        for name in ("prefix", "suffix", "valid_chars"):
             with self.subTest(name=name):
                 with self.assertRaises(BufferError):
                     CrackContext(**{name: memoryview(bytearray(b"abcd"))[::2]})
@@ -167,12 +158,13 @@ class ContextApiTestCase(unittest.TestCase):
         self.assertNotEqual(lhs, different)
 
     def test_equality_and_repr_include_configuration(self):
-        lhs = CrackContext(valid_chars=LOWER, brute_chars=b"abc", prefix=b"pre", suffix=b"suf")
-        same = CrackContext(valid_chars=LOWER, brute_chars=b"abc", prefix=b"pre", suffix=b"suf")
-        different = CrackContext(valid_chars=LOWER, brute_chars=b"abc", prefix=b"pre")
+        lhs = CrackContext(valid_chars=LOWER, prefix=b"pre", suffix=b"suf")
+        same = CrackContext(valid_chars=LOWER, prefix=b"pre", suffix=b"suf")
+        different = CrackContext(valid_chars=LOWER, prefix=b"pre")
 
         self.assertEqual(lhs, same)
         self.assertNotEqual(lhs, different)
         self.assertNotEqual(lhs, object())
         self.assertIn("CrackContext(", repr(lhs))
         self.assertIn("prefix=b'pre'", repr(lhs))
+        self.assertIn("valid_chars=", repr(lhs))

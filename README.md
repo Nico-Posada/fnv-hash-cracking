@@ -1,8 +1,8 @@
 # fnv-hash-cracking
 
-Crack hashes or find collisions for hashes hashed with the [FNV-1a](https://en.wikipedia.org/wiki/Fowler–Noll–Vo_hash_function#FNV-1a_hash) algorithm without full brute force.
+Crack hashes or find collisions for hashes hashed with the [FNV-1a](https://en.wikipedia.org/wiki/Fowler%E2%80%93Noll%E2%80%93Vo_hash_function#FNV-1a_hash) algorithm without exhaustive search.
 
-This implementation uses lattice-based techniques with LLL reduction via the FLINT library to efficiently crack FNV-1a hashes, supporting both standard 64-bit hashes and arbitrary-precision variants.
+This implementation uses bounded lattice enumeration with FLINT-backed reduction to efficiently crack FNV-1a hashes, supporting both standard 64-bit hashes and arbitrary-precision variants.
 
 ## Credits
 
@@ -53,7 +53,6 @@ init_crack_ctx(
     0xCBF29CE484222325,  // FNV-1a 64-bit offset basis
     0x100000001B3,        // FNV-1a 64-bit prime
     64,                   // bit size
-    "abcdefghijklmnopqrstuvwxyz",  // characters to brute force
     "abcdefghijklmnopqrstuvwxyz",  // valid characters in solution
     "prefix_",            // known prefix (or NULL)
     "_suffix"             // known suffix (or NULL)
@@ -64,13 +63,11 @@ uint64_t target_hash = 0x1234567890ABCDEF;
 
 // Crack with known length
 // 13 is the expected length of the string (including prefix/suffix)
-// 2 is the number of chars to brute
-CrackResult status = crack_u64_with_len(ctx, target_hash, &result, 13, 2);
+CrackResult status = crack_u64_with_len(ctx, target_hash, &result, 13);
 
 // Or search across lengths
-// 10 is the max string length to search for, 8 is the maximum crack size,
-// so if it can't find a string of length <= 8 then it will begin adding brute force to the search
-CrackResult status = crack_u64(ctx, target_hash, &result, 10, 8);
+// 10 is the max unknown string length to search for
+CrackResult status = crack_u64(ctx, target_hash, &result, 10);
 
 if (status == SUCCESS) {
     printf("Cracked: %s\n", result.data);
@@ -107,15 +104,13 @@ init_crack_fmpz_ctx(
     prime,
     320,  // bit size
     "0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ!\"#$%&'()*+,-./:;<=>?@[\\]^_`{|}~ ",
-    "0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ!\"#$%&'()*+,-./:;<=>?@[\\]^_`{|}~ ",
     NULL,  // no known prefix
     NULL   // no known suffix
 );
 
 char_buffer result = {NULL, 0};
 // We know the string is 37 chars long.
-// We don't want to brute force any chars because of how large the modulus is (2^320)
-CrackResult status = crack_fmpz_with_len(ctx, target, &result, 37, 0);
+CrackResult status = crack_fmpz_with_len(ctx, target, &result, 37);
 
 if (status == SUCCESS) {
     printf("Cracked: %s\n", result.data);
@@ -145,15 +140,11 @@ destroy_crack_ctx(ctx);
 
 ### Parameters
 - `expected_len` - Total length of the hashed string (including prefix/suffix)
-- `brute_len` - Number of characters to brute force (0 for pure lattice attack)
 - `max_search_len` - Maximum string length to search when length is unknown
-- `max_crack_len` - Maximum characters in the "unknown" portion to attempt
 
 ## How It Works
 
-This tool uses lattice reduction (LLL algorithm via FLINT) to transform the FNV-1a hash inversion problem into a closest vector problem. By constructing a carefully weighted lattice, the algorithm can efficiently find preimages without exhaustive brute force, especially when parts of the string are known (prefix/suffix) or the character set is constrained.
-
-For very short unknown sections or when the lattice attack alone is insufficient, a hybrid approach combines lattice reduction with limited brute forcing over the specified character set.
+This tool builds a lattice for the FNV-1a hash inversion problem, reduces the basis with FLINT, then runs bounded local enumeration around the solver guess. Known prefixes and suffixes are folded into the target before solving, and `valid_chars` constrains candidate bytes.
 
 ## Python Extension
 

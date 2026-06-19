@@ -1,6 +1,6 @@
 import unittest
 
-from fnvcrack import CrackContext, CrackOptions, CrackStatus, CrackStrategy
+from fnvcrack import CrackContext, CrackStatus
 
 from conftest import (
     ALNUM,
@@ -14,24 +14,22 @@ from conftest import (
 
 
 class CrackingStrategiesTestCase(CrackAssertionsMixin, unittest.TestCase):
-    def test_enumerate_cracks_common_charsets(self):
+    def test_default_cracks_common_charsets(self):
         cases = [
             (b"abcdefgh", LOWER),
             (b"abc12345", ALNUM),
             (b"Az 19!~?", PRINTABLE),
             (
-                bytes(
-                    [
-                        0x00,
-                        0x01,
-                        0x80,
-                        0xff,
-                        ord("A"),
-                        ord("b"),
-                        0x7f,
-                        0x20,
-                    ]
-                ),
+                bytes([
+                    0x00,
+                    0x01,
+                    0x80,
+                    0xff,
+                    ord("A"),
+                    ord("b"),
+                    0x7f,
+                    0x20,
+                ]),
                 FULL_BYTES,
             ),
         ]
@@ -40,57 +38,28 @@ class CrackingStrategiesTestCase(CrackAssertionsMixin, unittest.TestCase):
             with self.subTest(plaintext=plaintext, charset_len=len(charset)):
                 ctx = CrackContext(valid_chars=charset)
                 target = fnv(plaintext)
-                result = ctx.crack(
-                    target,
-                    max_len=len(plaintext),
-                    options=CrackOptions(strategy=CrackStrategy.ENUMERATE),
-                )
+                result = ctx.crack(target, max_len=len(plaintext))
                 self.assertCracked(result, target, ctx)
 
-    def test_lll_default_wrapper_still_cracks_basic_case(self):
-        plaintext = b"abcdefgh"
-        ctx = CrackContext(valid_chars=LOWER)
-        target = fnv(plaintext)
-        result = ctx.crack(target, max_len=8)
-        self.assertCracked(result, target, ctx)
-
-    def test_enumerate_cracks_known_case_where_lll_misses(self):
+    def test_default_cracks_case_the_legacy_path_missed(self):
         plaintext = b"zspsevwr"
-        target = fnv(plaintext)
         ctx = CrackContext(valid_chars=LOWER)
+        result = ctx.crack(fnv(plaintext), max_len=8)
+        self.assertEqual(result.value, plaintext)
 
-        lll_result = ctx.crack(target, max_len=8)
-        self.assertEqual(lll_result.status, CrackStatus.FAILED)
-        self.assertIsNone(lll_result.value)
-
-        enum_result = ctx.crack(
-            target,
-            max_len=8,
-            options=CrackOptions(strategy=CrackStrategy.ENUMERATE),
-        )
-        self.assertEqual(enum_result.value, plaintext)
-
-    def test_enumerate_with_prefix_suffix_and_bruteforce(self):
+    def test_prefix_suffix_unknown_bytes(self):
         plaintext = b"preaaabcdefsuf"
         target = fnv(plaintext)
         ctx = CrackContext(
             prefix=b"pre",
             suffix=b"suf",
-            brute_chars=LOWER,
             valid_chars=LOWER,
         )
-        result = ctx.crack(
-            target,
-            max_len=11,
-            options=CrackOptions(
-                strategy=CrackStrategy.ENUMERATE,
-                max_crack_len=6,
-            ),
-        )
+        result = ctx.crack(target, max_len=8)
         self.assertEqual(result.value, plaintext)
         self.assertCracked(result, target, ctx)
 
-    def test_enumerate_preserves_nul_bytes_in_known_parts(self):
+    def test_preserves_nul_bytes_in_known_parts(self):
         prefix = b"pre\x00"
         suffix = b"\x00suf"
         plaintext = prefix + b"abcd" + suffix
@@ -100,96 +69,30 @@ class CrackingStrategiesTestCase(CrackAssertionsMixin, unittest.TestCase):
             suffix=suffix,
             valid_chars=LOWER,
         )
-        result = ctx.crack(
-            target,
-            max_len=4,
-            options=CrackOptions(strategy=CrackStrategy.ENUMERATE),
-        )
+        result = ctx.crack(target, max_len=4)
         self.assertEqual(result.value, plaintext)
         self.assertCracked(result, target, ctx)
 
-    def test_lll_with_prefix_suffix_and_bruteforce(self):
-        plaintext = b"preaaabcdefghsuf"
+    def test_accepts_nul_bytes_in_unknown(self):
+        plaintext = b"pre\x00abc"
         target = fnv(plaintext)
         ctx = CrackContext(
             prefix=b"pre",
-            suffix=b"suf",
-            brute_chars=LOWER,
-            valid_chars=LOWER,
+            valid_chars=b"\x00" + LOWER,
         )
-        result = ctx.crack(
-            target,
-            max_len=12,
-            options=CrackOptions(max_crack_len=8),
-        )
-        self.assertCracked(result, target, ctx)
-
-    def test_lll_exact_known_string_preserves_nul_bytes(self):
-        prefix = b"pre\x00"
-        suffix = b"\x00suf"
-        plaintext = prefix + suffix
-        target = fnv(plaintext)
-        ctx = CrackContext(prefix=prefix, suffix=suffix)
-        result = ctx.crack(target, max_len=0)
-        self.assertEqual(result.value, plaintext)
-        self.assertCracked(result, target, ctx)
-
-    def test_enumerate_bruteforce_accepts_nul_bytes(self):
-        plaintext = b"pre\x00abcdef"
-        target = fnv(plaintext)
-        ctx = CrackContext(
-            prefix=b"pre",
-            brute_chars=b"\x00a",
-            valid_chars=LOWER,
-        )
-        result = ctx.crack(
-            target,
-            max_len=7,
-            options=CrackOptions(
-                strategy=CrackStrategy.ENUMERATE,
-                max_crack_len=6,
-            ),
-        )
-        self.assertEqual(result.value, plaintext)
-        self.assertCracked(result, target, ctx)
-
-    def test_enumerate_can_fully_bruteforce_unknown_bytes(self):
-        plaintext = b"prebsuf"
-        ctx = CrackContext(
-            prefix=b"pre",
-            suffix=b"suf",
-            brute_chars=b"ab",
-            valid_chars=b"xyz",
-        )
-        target = fnv(plaintext)
-        result = ctx.crack(
-            target,
-            max_len=1,
-            options=CrackOptions(
-                strategy=CrackStrategy.ENUMERATE,
-                max_crack_len=0,
-            ),
-        )
+        result = ctx.crack(target, max_len=4)
         self.assertEqual(result.value, plaintext)
         self.assertCracked(result, target, ctx)
 
     def test_exact_known_string_with_zero_unknown_length(self):
         plaintext = b"prefixsuffix"
         ctx = CrackContext(prefix=b"prefix", suffix=b"suffix")
-        result = ctx.crack(
-            fnv(plaintext),
-            max_len=0,
-            options=CrackOptions(strategy=CrackStrategy.ENUMERATE, max_crack_len=0),
-        )
+        result = ctx.crack(fnv(plaintext), max_len=0)
         self.assertEqual(result.value, plaintext)
 
     def test_wrong_hash_for_known_string_fails_without_output(self):
         ctx = CrackContext(prefix=b"prefix", suffix=b"suffix")
-        result = ctx.crack(
-            0,
-            max_len=0,
-            options=CrackOptions(strategy=CrackStrategy.ENUMERATE, max_crack_len=0),
-        )
+        result = ctx.crack(0, max_len=0)
         self.assertEqual(result.status, CrackStatus.FAILED)
         self.assertIsNone(result.value)
 
@@ -197,11 +100,7 @@ class CrackingStrategiesTestCase(CrackAssertionsMixin, unittest.TestCase):
         plaintext = b"abc"
         ctx = CrackContext(valid_chars=LOWER)
         target = fnv(plaintext)
-        result = ctx.crack(
-            target,
-            max_len=8,
-            options=CrackOptions(strategy=CrackStrategy.ENUMERATE),
-        )
+        result = ctx.crack(target, max_len=8)
         self.assertEqual(result.value, plaintext)
 
     def test_enum_bound_zero_is_not_rewritten_to_default(self):
@@ -212,18 +111,12 @@ class CrackingStrategiesTestCase(CrackAssertionsMixin, unittest.TestCase):
         zero_bound = ctx.crack(
             target,
             max_len=8,
-            options=CrackOptions(
-                strategy=CrackStrategy.ENUMERATE,
-                enum_bound=0,
-            ),
+            enum_bound=0,
         )
         default_bound = ctx.crack(
             target,
             max_len=8,
-            options=CrackOptions(
-                strategy=CrackStrategy.ENUMERATE,
-                enum_bound=4,
-            ),
+            enum_bound=4,
         )
 
         self.assertEqual(zero_bound.status, CrackStatus.FAILED)
@@ -235,24 +128,9 @@ class CrackingStrategiesTestCase(CrackAssertionsMixin, unittest.TestCase):
         self.assertEqual(result.status, CrackStatus.BAD_SEARCH_LENGTH)
         self.assertIsNone(result.value)
 
-    def test_missing_brute_chars_reports_error(self):
-        plaintext = b"aaabcdef"
-        ctx = CrackContext(valid_chars=LOWER)
-        result = ctx.crack(
-            fnv(plaintext),
-            max_len=8,
-            options=CrackOptions(max_crack_len=6),
-        )
-        self.assertEqual(result.status, CrackStatus.MISSING_BRUTE_CHARS)
-        self.assertIsNone(result.value)
-
     def test_bad_search_length_with_known_parts_reports_error(self):
         ctx = CrackContext(prefix=b"pre", suffix=b"suf")
-        result = ctx.crack(
-            0,
-            max_len=5,
-            options=CrackOptions(strategy=CrackStrategy.ENUMERATE),
-        )
+        result = ctx.crack(0, max_len=5)
         self.assertEqual(result.status, CrackStatus.FAILED)
 
     def test_max_enum_candidates_limit_does_not_crash(self):
@@ -260,21 +138,14 @@ class CrackingStrategiesTestCase(CrackAssertionsMixin, unittest.TestCase):
         result = ctx.crack(
             0,
             max_len=8,
-            options=CrackOptions(
-                strategy=CrackStrategy.ENUMERATE,
-                max_enum_candidates=1,
-            ),
+            max_enum_candidates=1,
         )
         self.assertIn(result.status, (CrackStatus.FAILED, CrackStatus.SUCCESS))
 
     def test_non_matching_charset_fails_without_false_positive(self):
         plaintext = b"abcdefgh"
         ctx = CrackContext(valid_chars=DIGITS)
-        result = ctx.crack(
-            fnv(plaintext),
-            max_len=8,
-            options=CrackOptions(strategy=CrackStrategy.ENUMERATE),
-        )
+        result = ctx.crack(fnv(plaintext), max_len=8)
         self.assertEqual(result.status, CrackStatus.FAILED)
         self.assertIsNone(result.value)
 
@@ -289,11 +160,7 @@ class CrackingStrategiesTestCase(CrackAssertionsMixin, unittest.TestCase):
             valid_chars=LOWER,
         )
         target = fnv(plaintext, offset_basis, prime, 32)
-        result = ctx.crack(
-            target,
-            max_len=4,
-            options=CrackOptions(strategy=CrackStrategy.ENUMERATE),
-        )
+        result = ctx.crack(target, max_len=4)
         self.assertCracked(result, target, ctx)
 
     def test_8_bit_hash_path(self):
@@ -307,17 +174,10 @@ class CrackingStrategiesTestCase(CrackAssertionsMixin, unittest.TestCase):
             valid_chars=LOWER,
         )
         target = fnv(plaintext, offset_basis, prime, 8)
-        result = ctx.crack(
-            target,
-            max_len=2,
-            options=CrackOptions(
-                strategy=CrackStrategy.ENUMERATE,
-                max_crack_len=2,
-            ),
-        )
+        result = ctx.crack(target, max_len=2)
         self.assertCracked(result, target, ctx)
 
-    def test_fmpz_lll_default_path(self):
+    def test_fmpz_default_path(self):
         plaintext = b"abcd"
         offset_basis = int("6c62272e07bb014262b821756295c58d", 16)
         prime = int("0000000001000000000000000000013b", 16)
@@ -343,11 +203,7 @@ class CrackingStrategiesTestCase(CrackAssertionsMixin, unittest.TestCase):
             valid_chars=LOWER + DIGITS,
         )
         target = fnv(plaintext, offset_basis, prime, 128)
-        result = ctx.crack(
-            target,
-            max_len=8,
-            options=CrackOptions(strategy=CrackStrategy.ENUMERATE),
-        )
+        result = ctx.crack(target, max_len=8)
         self.assertEqual(result.value, plaintext)
         self.assertCracked(result, target, ctx)
 
@@ -365,11 +221,7 @@ class CrackingStrategiesTestCase(CrackAssertionsMixin, unittest.TestCase):
             suffix=suffix,
         )
         target = fnv(plaintext, offset_basis, prime, 128)
-        result = ctx.crack(
-            target,
-            max_len=0,
-            options=CrackOptions(strategy=CrackStrategy.ENUMERATE, max_crack_len=0),
-        )
+        result = ctx.crack(target, max_len=0)
         self.assertEqual(result.value, plaintext)
         self.assertCracked(result, target, ctx)
 
@@ -385,10 +237,6 @@ class CrackingStrategiesTestCase(CrackAssertionsMixin, unittest.TestCase):
             suffix=b"suffix",
         )
         target = fnv(plaintext, offset_basis, prime, 128)
-        result = ctx.crack(
-            target,
-            max_len=0,
-            options=CrackOptions(strategy=CrackStrategy.ENUMERATE, max_crack_len=0),
-        )
+        result = ctx.crack(target, max_len=0)
         self.assertEqual(result.value, plaintext)
         self.assertCracked(result, target, ctx)
