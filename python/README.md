@@ -44,10 +44,19 @@ done
 from fnvcrack import CrackContext
 
 ctx = CrackContext(valid_chars=b"abcdefghijklmnopqrstuvwxyz")
-result = ctx.crack(target_hash, max_len=8)
+result = ctx.crack(target_hash, crack_len=8)
 
 if result.ok:
     print(result.value)
+```
+
+`crack_len` is the number of unknown bytes to crack. Known prefixes and suffixes
+do not count toward it.
+
+If you do not know the length, enable incremental search:
+
+```python
+result = ctx.crack(target_hash, crack_len=12, incremental=True)
 ```
 
 Tune enumeration when you want a wider local search:
@@ -55,7 +64,7 @@ Tune enumeration when you want a wider local search:
 ```python
 result = ctx.crack(
     target_hash,
-    max_len=12,
+    crack_len=12,
     enum_bound=4,
 )
 ```

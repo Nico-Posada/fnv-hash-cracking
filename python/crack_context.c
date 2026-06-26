@@ -344,20 +344,22 @@ PyObject*
 CrackContext_crack(CrackContext* self, PyObject *args, PyObject *kwds) {
     static char* kwlist[] = {
         "target",
-        "max_len",
+        "crack_len",
         "enum_bound",
         "max_enum_candidates",
+        "incremental",
         NULL
     };
 
     PyObject* target = NULL,
-            * max_len_obj = NULL,
+            * crack_len_obj = NULL,
             * enum_bound_obj = NULL,
-            * max_enum_candidates_obj = NULL;
+            * max_enum_candidates_obj = NULL,
+            * incremental_obj = NULL;
 
-    if (!PyArg_ParseTupleAndKeywords(args, kwds, "OOOO", kwlist,
-                                     &target, &max_len_obj, &enum_bound_obj,
-                                     &max_enum_candidates_obj)) {
+    if (!PyArg_ParseTupleAndKeywords(args, kwds, "OOOOO", kwlist,
+                                     &target, &crack_len_obj, &enum_bound_obj,
+                                     &max_enum_candidates_obj, &incremental_obj)) {
         return NULL;
     }
 
@@ -378,9 +380,10 @@ CrackContext_crack(CrackContext* self, PyObject *args, PyObject *kwds) {
         return NULL;
     }
 
-    uint32_t max_len, enum_bound;
+    uint32_t crack_len, enum_bound;
     uint64_t max_enum_candidates;
-    if (!_parse_uint32_arg(max_len_obj, &max_len, false, 0)) {
+    bool incremental;
+    if (!_parse_uint32_arg(crack_len_obj, &crack_len, false, 0)) {
         return NULL;
     }
     if (!_parse_uint32_arg(enum_bound_obj, &enum_bound, false, CRACK_DEFAULT_ENUM_BOUND)) {
@@ -389,11 +392,18 @@ CrackContext_crack(CrackContext* self, PyObject *args, PyObject *kwds) {
     if (!_parse_uint64_arg(max_enum_candidates_obj, &max_enum_candidates, false, CRACK_DEFAULT_MAX_ENUM_CANDIDATES)) {
         return NULL;
     }
-    const size_t known_len = get_prefix(self->ctx)->length + get_suffix(self->ctx)->length;
-    if (known_len > UINT32_MAX || (uint64_t)max_len + (uint64_t)known_len > UINT32_MAX) {
-        PyErr_SetString(PyExc_OverflowError,
-                        "max_len plus prefix and suffix lengths must fit in uint32");
+    if (!_parse_bool_arg(incremental_obj, "incremental", &incremental)) {
         return NULL;
+    }
+    const size_t known_len = get_prefix(self->ctx)->length + get_suffix(self->ctx)->length;
+    if (known_len > UINT32_MAX || (uint64_t)crack_len + (uint64_t)known_len > UINT32_MAX) {
+        PyErr_SetString(PyExc_OverflowError,
+                        "crack_len plus prefix and suffix lengths must fit in uint32");
+        return NULL;
+    }
+
+    if (crack_len == 0 && known_len == 0) {
+        return Py_BuildValue("(iO)", BAD_SEARCH_LENGTH, Py_None);
     }
 
     char_buffer output = { NULL, 0 };
@@ -414,14 +424,26 @@ CrackContext_crack(CrackContext* self, PyObject *args, PyObject *kwds) {
         }
 
         FNVCRACK_BEGIN_ALLOW_THREADS
-        crack_result = crack_fmpz_limits(
-            self->ctx,
-            target_fmpz,
-            &output,
-            max_len,
-            enum_bound,
-            max_enum_candidates
-        );
+        if (incremental) {
+            crack_result = crack_fmpz_limits(
+                self->ctx,
+                target_fmpz,
+                &output,
+                crack_len,
+                enum_bound,
+                max_enum_candidates
+            );
+        }
+        else {
+            crack_result = crack_fmpz_with_len_limits(
+                self->ctx,
+                target_fmpz,
+                &output,
+                crack_len + (uint32_t)known_len,
+                enum_bound,
+                max_enum_candidates
+            );
+        }
         FNVCRACK_END_ALLOW_THREADS
         fmpz_clear(target_fmpz);
     }
@@ -434,14 +456,26 @@ CrackContext_crack(CrackContext* self, PyObject *args, PyObject *kwds) {
         }
 
         FNVCRACK_BEGIN_ALLOW_THREADS
-        crack_result = crack_u64_limits(
-            self->ctx,
-            target_u64,
-            &output,
-            max_len,
-            enum_bound,
-            max_enum_candidates
-        );
+        if (incremental) {
+            crack_result = crack_u64_limits(
+                self->ctx,
+                target_u64,
+                &output,
+                crack_len,
+                enum_bound,
+                max_enum_candidates
+            );
+        }
+        else {
+            crack_result = crack_u64_with_len_limits(
+                self->ctx,
+                target_u64,
+                &output,
+                crack_len + (uint32_t)known_len,
+                enum_bound,
+                max_enum_candidates
+            );
+        }
         FNVCRACK_END_ALLOW_THREADS
     }
     fnvcrack_restore_interrupt_handler();

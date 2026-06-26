@@ -78,16 +78,18 @@ class CrackContext:
     def crack(
         self,
         target: int,
-        max_len: int,
+        crack_len: int,
         enum_bound: int = DEFAULT_ENUM_BOUND,
         max_enum_candidates: int = DEFAULT_MAX_ENUM_CANDIDATES,
+        incremental: bool = False,
     ) -> CrackResult:
         """Try to find an input whose FNV-1a hash matches ``target``.
 
         :param target: Hash value to crack.
-        :param max_len: Maximum number of unknown bytes to search.
+        :param crack_len: Unknown byte length to crack.
         :param enum_bound: Search radius around the lattice solution.
         :param max_enum_candidates: Maximum enumeration candidates. ``0`` means unlimited.
+        :param incremental: Search all unknown lengths from 1 through ``crack_len``.
         :returns: The crack status and value, if one was found.
         :raises TypeError: If arguments have invalid types.
         :raises ValueError: If integer arguments are negative.
@@ -95,9 +97,10 @@ class CrackContext:
         """
         status, value = self._native.crack(
             target,
-            max_len,
+            crack_len,
             enum_bound,
             max_enum_candidates,
+            incremental,
         )
         return CrackResult(status=status, value=value)
 

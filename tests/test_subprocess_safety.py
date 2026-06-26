@@ -116,7 +116,7 @@ class SubprocessSafetyTestCase(unittest.TestCase):
                 soft = min(soft, hard)
 
             resource.setrlimit(resource.RLIMIT_AS, (soft, hard))
-            result = ctx.crack(0, max_len=0)
+            result = ctx.crack(0, crack_len=0)
             print(result.status_name)
             """
         )

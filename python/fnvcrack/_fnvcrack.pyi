@@ -66,16 +66,18 @@ class NativeContext:
     def crack(
         self,
         target: int,
-        max_len: int,
+        crack_len: int,
         enum_bound: int,
         max_enum_candidates: int,
+        incremental: bool,
     ) -> tuple[int, bytes | None]:
         """Try to crack ``target`` using fully normalized native arguments.
 
         :param target: Hash value to crack.
-        :param max_len: Maximum number of unknown bytes to search.
+        :param crack_len: Unknown byte length to crack.
         :param enum_bound: Search radius around the lattice solution.
         :param max_enum_candidates: Maximum enumeration candidates. ``0`` means unlimited.
+        :param incremental: Search all unknown lengths from 1 through ``crack_len``.
         :returns: A ``(status, value)`` pair.
         """
         ...

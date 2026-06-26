@@ -232,3 +232,16 @@ _parse_uint64_arg(PyObject* obj, const char* const argname, uint64_t* result, bo
     return 1;
 }
 #define _parse_uint64_arg(obj, result, optional, default) _parse_uint64_arg(obj, #obj, result, optional, default)
+
+static int
+_parse_bool_arg(PyObject* obj, const char* const argname, bool* result) {
+    if (!PyBool_Check(obj)) {
+        PyErr_Format(PyExc_TypeError,
+                     "%s must be a bool, got '%.200s'",
+                     argname, Py_TYPE(obj)->tp_name);
+        return 0;
+    }
+
+    *result = Py_IsTrue(obj);
+    return 1;
+}
