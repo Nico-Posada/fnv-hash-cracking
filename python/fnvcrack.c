@@ -20,8 +20,8 @@
 //////////////////
 
 // static PyMemberDef CrackContext_members[] = {
-//     // {"bit_length", Py_T_UINT, offsetof(CrackContext, ctx[0].bits), Py_READONLY, "Value used to calculate the modulus (2^bit_length)"},
-//     {NULL}  /* Sentinel */
+//     // {"bit_length", Py_T_UINT, offsetof(CrackContext, ctx[0].bits), Py_READONLY, "Value used to calculate the
+//     modulus (2^bit_length)"}, {NULL}  /* Sentinel */
 // };
 
 static PyGetSetDef Custom_getsetters[] = {
@@ -29,25 +29,35 @@ static PyGetSetDef Custom_getsetters[] = {
     {"prime", (getter)CrackContext_get_prime, (setter)NULL, PyDoc_STR("Prime"), NULL},
     {"prefix", (getter)CrackContext_get_prefix, (setter)NULL, PyDoc_STR("Prefix"), NULL},
     {"suffix", (getter)CrackContext_get_suffix, (setter)NULL, PyDoc_STR("Suffix"), NULL},
-    {"bit_length", (getter)CrackContext_get_bit_length, (setter)NULL, PyDoc_STR("Value used to calculate the modulus (2 ^ bit_length)"), NULL},
-    {"valid_chars", (getter)CrackContext_get_valid_chars, (setter)NULL, PyDoc_STR("Characters that should exist in the crack result"), NULL},
-    {NULL}  /* Sentinel */
+    {"bit_length",
+     (getter)CrackContext_get_bit_length,
+     (setter)NULL,
+     PyDoc_STR("Value used to calculate the modulus (2 ^ bit_length)"),
+     NULL},
+    {"valid_chars",
+     (getter)CrackContext_get_valid_chars,
+     (setter)NULL,
+     PyDoc_STR("Characters that should exist in the crack result"),
+     NULL},
+    {NULL} /* Sentinel */
 };
 
 static PyMethodDef CrackContext_methods[] = {
-    {"crack", (PyCFunction)CrackContext_crack, METH_VARARGS|METH_KEYWORDS, PyDoc_STR("Try to crack a given hash after setting the crack context.")},
-    {NULL}  /* Sentinel */
+    {"crack",
+     (PyCFunction)CrackContext_crack,
+     METH_VARARGS | METH_KEYWORDS,
+     PyDoc_STR("Try to crack a given hash after setting the crack context.")},
+    {NULL} /* Sentinel */
 };
 
 PyTypeObject CrackContextType = {
-    .ob_base = PyVarObject_HEAD_INIT(NULL, 0)
-    .tp_name = "fnvcrack._fnvcrack.NativeContext",
+    .ob_base = PyVarObject_HEAD_INIT(NULL, 0).tp_name = "fnvcrack._fnvcrack.NativeContext",
     .tp_doc = PyDoc_STR("Context used for the hash cracking process."),
     .tp_basicsize = sizeof(CrackContext),
     .tp_itemsize = 0,
     .tp_flags = Py_TPFLAGS_DEFAULT,
     .tp_new = CrackContext_new,
-    .tp_repr = (reprfunc) CrackContext_repr,
+    .tp_repr = (reprfunc)CrackContext_repr,
     // .tp_init = (initproc) CrackContext_init,
     .tp_dealloc = (destructor)CrackContext_dealloc,
     // .tp_members = CrackContext_members,
@@ -61,16 +71,11 @@ PyTypeObject CrackContextType = {
 /////////////////
 
 static PyMethodDef module_methods[] = {
-    {NULL, NULL, 0, NULL}  // Sentinel
+    {NULL, NULL, 0, NULL} // Sentinel
 };
 
 static struct PyModuleDef fnvcrack_module = {
-    PyModuleDef_HEAD_INIT,
-    "fnvcrack._fnvcrack",
-    "Native FNV crack bindings",
-    -1,
-    module_methods
-};
+    PyModuleDef_HEAD_INIT, "fnvcrack._fnvcrack", "Native FNV crack bindings", -1, module_methods};
 
 PyObject* CrackException;
 

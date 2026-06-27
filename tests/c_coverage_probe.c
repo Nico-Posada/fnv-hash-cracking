@@ -6,13 +6,12 @@
 #include <sys/resource.h>
 #include <unistd.h>
 
-#include <flint/fmpz.h>
-
 #include "context.h"
 #include "crack.h"
 #include "fnv.h"
 #include "interrupt.h"
 #include "inverse.h"
+#include <flint/fmpz.h>
 
 #define FNV64_OFFSET_BASIS 0xcbf29ce484222325ULL
 #define FNV64_PRIME 0x100000001b3ULL
@@ -92,8 +91,10 @@ static void check_inverse_api(void) {
 }
 
 static void check_fnv_api(void) {
-    assert(fnv_u64("abc", FNV64_OFFSET_BASIS, FNV64_PRIME, 64) ==
-           fnv_u64_with_len(buf("abc"), FNV64_OFFSET_BASIS, FNV64_PRIME, 64));
+    assert(
+        fnv_u64("abc", FNV64_OFFSET_BASIS, FNV64_PRIME, 64) ==
+        fnv_u64_with_len(buf("abc"), FNV64_OFFSET_BASIS, FNV64_PRIME, 64)
+    );
     assert(fnv_u64("abc", FNV64_OFFSET_BASIS, FNV64_PRIME, 0) == 0);
     assert(fnv_u64("abc", FNV64_OFFSET_BASIS, FNV64_PRIME, 8) < 256);
 
@@ -213,12 +214,7 @@ static void check_result_malloc_failure(void) {
         (char_buffer){prefix, prefix_len},
         (char_buffer){NULL, 0}
     ));
-    uint64_t target = fnv_u64_with_len(
-        (char_buffer){prefix, prefix_len},
-        FNV64_OFFSET_BASIS,
-        FNV64_PRIME,
-        64
-    );
+    uint64_t target = fnv_u64_with_len((char_buffer){prefix, prefix_len}, FNV64_OFFSET_BASIS, FNV64_PRIME, 64);
     free(prefix);
 
     struct rlimit old_limit;

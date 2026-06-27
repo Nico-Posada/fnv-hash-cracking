@@ -14,6 +14,7 @@ ext/
 .codex/
 AGENTS.md
 .mypy_cache/
+.clangd
 
 # Nonstandard stuff I have for testing
 *.egg-info/

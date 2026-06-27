@@ -107,11 +107,7 @@ static void _sort_rows_desc(fmpz_mat_t M) {
     fmpz_clear(ni);
 }
 
-static bool _kannan_cvp_coords(
-    fmpz_mat_t coords,
-    const fmpz_mat_t basis,
-    const fmpz_mat_t target
-) {
+static bool _kannan_cvp_coords(fmpz_mat_t coords, const fmpz_mat_t basis, const fmpz_mat_t target) {
     const slong n = fmpz_mat_ncols(basis);
     fmpz_mat_t L, U;
     fmpz_mat_init(L, n + 1, n + 1);
@@ -239,11 +235,7 @@ static void _add_basis_row(enum_search_t* ctx, uint32_t row, int64_t scale) {
     }
 
     for (uint32_t j = 0; j < ctx->dim; ++j) {
-        fmpz_addmul_si(
-            fmpz_mat_entry(ctx->current, 0, j),
-            fmpz_mat_entry(ctx->basis, row, j),
-            scale
-        );
+        fmpz_addmul_si(fmpz_mat_entry(ctx->current, 0, j), fmpz_mat_entry(ctx->basis, row, j), scale);
     }
 }
 
@@ -406,11 +398,9 @@ enumerate_solver_result enumerate_bounded_mod(
     result = ENUMERATE_SOLVER_DONE;
     if (search_ctx.interrupted) {
         result = ENUMERATE_SOLVER_INTERRUPTED;
-    }
-    else if (search_ctx.found) {
+    } else if (search_ctx.found) {
         result = ENUMERATE_SOLVER_FOUND;
-    }
-    else if (search_ctx.hit_limit) {
+    } else if (search_ctx.hit_limit) {
         result = ENUMERATE_SOLVER_LIMIT;
     }
 

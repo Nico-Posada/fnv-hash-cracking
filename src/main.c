@@ -17,20 +17,20 @@ static inline uint64_t get_time_ns() {
 void run_64_bit_crack() {
     CREATE_CONTEXT(ctx);
     if (!init_crack_ctx(
-        ctx,
-        // offset basis
-        0xCBF29CE484222325,
-        // prime
-        0x100000001B3,
-        // max value (2^x), 64 bits should be the most common one you'll see
-        64,
-        // valid chars
-        "abcdefghijklmnopqrstuvwxyz",
-        // known prefix
-        "qqq",
-        // known suffix
-        NULL
-    )) {
+            ctx,
+            // offset basis
+            0xCBF29CE484222325,
+            // prime
+            0x100000001B3,
+            // max value (2^x), 64 bits should be the most common one you'll see
+            64,
+            // valid chars
+            "abcdefghijklmnopqrstuvwxyz",
+            // known prefix
+            "qqq",
+            // known suffix
+            NULL
+        )) {
         printf("Failed to initialize ctx in run_64_bit_crack\n");
         return;
     }
@@ -42,7 +42,12 @@ void run_64_bit_crack() {
     const uint64_t start = get_time_ns();
     CrackResult ret = crack_u64_with_len(ctx, hashed, &buf, 13);
     const uint64_t end = get_time_ns();
-    printf("result: %s\nstr: %s\ntime: %.4lf\n", result_as_str(ret), buf.data ? buf.data : "(failed)", (end - start) / 1000000000.0);
+    printf(
+        "result: %s\nstr: %s\ntime: %.4lf\n",
+        result_as_str(ret),
+        buf.data ? buf.data : "(failed)",
+        (end - start) / 1000000000.0
+    );
     clear_char_buffer(&buf);
     destroy_crack_ctx(ctx);
 }
@@ -51,12 +56,16 @@ void run_64_bit_crack() {
 // Cracking an FNV-1a hash that uses mod 2**320
 void run_320_bit_crack() {
     fmpz_t offset_basis, prime;
-    fmpz_init(offset_basis); fmpz_init(prime);
+    fmpz_init(offset_basis);
+    fmpz_init(prime);
     fmpz_set_str(offset_basis, "86478568332086667988955226522744024433416290808708427009300709942571393030379", 10);
     fmpz_set_str(prime, "58212954222403626346155684772977216669103315464820228336508867619615003388891", 10);
 
-    fmpz_t hashed; fmpz_init(hashed);
-    fmpz_set_str(hashed, "923278209713176653012807450506579337424686596606979155232335733448961331039798473007051981204278", 10);
+    fmpz_t hashed;
+    fmpz_init(hashed);
+    fmpz_set_str(
+        hashed, "923278209713176653012807450506579337424686596606979155232335733448961331039798473007051981204278", 10
+    );
 
     CREATE_CONTEXT(ctx);
     init_crack_fmpz_ctx(
@@ -67,7 +76,8 @@ void run_320_bit_crack() {
         // valid chars
         "0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ!\"#$%&\'()*+,-./:;<=>?@[\\]^_`{|}~ ",
         // known prefix, known suffix (challenge uses bytes_to_long so the string will be backwards)
-        "}", "{ftci"
+        "}",
+        "{ftci"
     );
 
     // set up the char buffer and try cracking
@@ -77,7 +87,12 @@ void run_320_bit_crack() {
     const uint64_t end = get_time_ns();
 
     // print results (output string will be reversed because it used bytes_to_long on it in the challenge)
-    printf("result: %s\nstr: %s\ntime: %.4lf\n", result_as_str(ret), buf.data ? buf.data : "(failed)", (end - start) / 1000000000.0);
+    printf(
+        "result: %s\nstr: %s\ntime: %.4lf\n",
+        result_as_str(ret),
+        buf.data ? buf.data : "(failed)",
+        (end - start) / 1000000000.0
+    );
 
     // clean up
     fmpz_clear(offset_basis);
@@ -101,13 +116,17 @@ void run_64_bit_unk() {
     const uint64_t start = get_time_ns();
     CrackResult ret = crack_u64(ctx, hashed, &buf, 10);
     const uint64_t end = get_time_ns();
-    printf("result: %s\nstr: %s\ntime: %.4lf\n", result_as_str(ret), buf.data ? buf.data : "(failed)", (end - start) / 1000000000.0);
+    printf(
+        "result: %s\nstr: %s\ntime: %.4lf\n",
+        result_as_str(ret),
+        buf.data ? buf.data : "(failed)",
+        (end - start) / 1000000000.0
+    );
     clear_char_buffer(&buf);
     destroy_crack_ctx(ctx);
 }
 
-int main()
-{
+int main() {
     fnvcrack_clear_interrupt();
     fnvcrack_install_interrupt_handler();
 

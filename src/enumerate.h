@@ -6,11 +6,7 @@
 #include <flint/fmpz.h>
 #include <flint/fmpz_mat.h>
 
-typedef bool (*enumerate_solution_cb)(
-    const int64_t* deltas,
-    uint32_t delta_len,
-    void* userdata
-);
+typedef bool (*enumerate_solution_cb)(const int64_t* deltas, uint32_t delta_len, void* userdata);
 
 typedef enum {
     ENUMERATE_SOLVER_INTERRUPTED = -2,

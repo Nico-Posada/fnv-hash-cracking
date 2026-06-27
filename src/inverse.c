@@ -6,7 +6,8 @@ uint64_t _mulmod(uint64_t a, uint64_t b, uint64_t m) {
     uint64_t res = 0;
 
     while (a != 0) {
-        if (a & 1) res = (res + b) % m;
+        if (a & 1)
+            res = (res + b) % m;
         a >>= 1;
         b = (b << 1) % m;
     }
@@ -26,7 +27,8 @@ uint64_t _2pow64modn(uint64_t n) {
     base %= n;
 
     while (exp > 0) {
-        if (exp & 1) result = (result * base) % n;
+        if (exp & 1)
+            result = (result * base) % n;
         base = _mulmod(base, base, n);
         exp >>= 1;
     }
@@ -75,12 +77,10 @@ uint64_t inverse(uint64_t num, uint32_t mod_exponent) {
     uint64_t out_vals[2];
     if (num == 0) {
         return 0;
-    }
-    else if (mod_exponent == 64) {
+    } else if (mod_exponent == 64) {
         _gcd_extended(out_vals, _2pow64modn(num), num);
         return out_vals[1] - _2pow64divn(num) * out_vals[0];
-    }
-    else {
+    } else {
         const uint64_t mod = (uint64_t)1 << mod_exponent;
         _gcd_extended(out_vals, num, mod);
         return out_vals[0] & (mod - 1);

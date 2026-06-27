@@ -21,12 +21,8 @@ inline static CrackResult _check_prereqs(const context_t ctx) {
     return SUCCESS;
 }
 
-inline static bool _store_result_safe(
-    char_buffer prefix,
-    char_buffer cracked,
-    char_buffer suffix,
-    char_buffer* out_buffer
-) {
+inline static bool
+_store_result_safe(char_buffer prefix, char_buffer cracked, char_buffer suffix, char_buffer* out_buffer) {
     const size_t total_len = prefix.length + cracked.length + suffix.length;
     char* result_buf = malloc(total_len + 1);
     if (!result_buf) {
@@ -63,18 +59,13 @@ inline static uint64_t _bit_mask_u64(const uint32_t bit_len) {
 inline static void _init_modulus(fmpz_t MOD, const uint32_t bit_len) {
     if (bit_len == 64) {
         fmpz_set_uiui(MOD, /*hi =*/(ulong)1, /*lo =*/(ulong)0);
-    }
-    else {
+    } else {
         fmpz_ui_pow_ui(MOD, 2, bit_len);
     }
 }
 
-inline static uint64_t _reverse_suffix_u64(
-    uint64_t target,
-    char_buffer suffix,
-    const uint64_t prime,
-    const uint32_t bit_len
-) {
+inline static uint64_t
+_reverse_suffix_u64(uint64_t target, char_buffer suffix, const uint64_t prime, const uint32_t bit_len) {
     if (suffix.length == 0) {
         return target;
     }
@@ -117,12 +108,7 @@ inline static void _reverse_suffix_fmpz(
     fmpz_clear(inv_prime);
 }
 
-static void _delta_bounds(
-    const context_t ctx,
-    int64_t* lower_bounds,
-    int64_t* upper_bounds,
-    const uint32_t delta_len
-) {
+static void _delta_bounds(const context_t ctx, int64_t* lower_bounds, int64_t* upper_bounds, const uint32_t delta_len) {
     int64_t lo = 255;
     int64_t hi = -255;
 
@@ -148,12 +134,8 @@ static void _delta_bounds(
     }
 }
 
-static void _set_first_delta_bounds(
-    const context_t ctx,
-    int64_t* lower_bounds,
-    int64_t* upper_bounds,
-    const uint32_t state_low
-) {
+static void
+_set_first_delta_bounds(const context_t ctx, int64_t* lower_bounds, int64_t* upper_bounds, const uint32_t state_low) {
     int64_t lo = 255;
     int64_t hi = -255;
 
@@ -266,46 +248,25 @@ typedef struct {
     bool memory_error;
 } enum_u64_cb_ctx_t;
 
-static bool _enum_u64_candidate(
-    const int64_t* deltas,
-    uint32_t delta_len,
-    void* userdata
-) {
+static bool _enum_u64_candidate(const int64_t* deltas, uint32_t delta_len, void* userdata) {
     enum_u64_cb_ctx_t* cb_ctx = userdata;
     if (!_deltas_to_bytes_u64(
-        cb_ctx->ctx,
-        cb_ctx->new_hash,
-        cb_ctx->prime,
-        cb_ctx->bit_len,
-        deltas,
-        delta_len,
-        cb_ctx->ret_buf
-    )) {
+            cb_ctx->ctx, cb_ctx->new_hash, cb_ctx->prime, cb_ctx->bit_len, deltas, delta_len, cb_ctx->ret_buf
+        )) {
         return false;
     }
 
     uint64_t hash = fnv_u64_with_len(
-        (char_buffer){cb_ctx->ret_buf, cb_ctx->delta_len},
-        cb_ctx->new_hash,
-        cb_ctx->prime,
-        cb_ctx->bit_len
+        (char_buffer){cb_ctx->ret_buf, cb_ctx->delta_len}, cb_ctx->new_hash, cb_ctx->prime, cb_ctx->bit_len
     );
-    hash = fnv_u64_with_len(
-        cb_ctx->suffix,
-        hash,
-        cb_ctx->prime,
-        cb_ctx->bit_len
-    );
+    hash = fnv_u64_with_len(cb_ctx->suffix, hash, cb_ctx->prime, cb_ctx->bit_len);
     if (hash != cb_ctx->target) {
         return false;
     }
 
     if (!_store_result_safe(
-        cb_ctx->prefix,
-        (char_buffer){cb_ctx->ret_buf, cb_ctx->delta_len},
-        cb_ctx->suffix,
-        cb_ctx->out_buffer
-    )) {
+            cb_ctx->prefix, (char_buffer){cb_ctx->ret_buf, cb_ctx->delta_len}, cb_ctx->suffix, cb_ctx->out_buffer
+        )) {
         cb_ctx->memory_error = true;
         return true;
     }
@@ -390,12 +351,7 @@ static CrackResult _crack_u64_with_len_enumerate(
             goto cleanup;
         }
 
-        if (!_store_result_safe(
-            prefix,
-            (char_buffer){ret_buf, 0},
-            suffix,
-            out_buffer
-        )) {
+        if (!_store_result_safe(prefix, (char_buffer){ret_buf, 0}, suffix, out_buffer)) {
             result = MEMORY_ERROR;
             goto cleanup;
         }
@@ -424,15 +380,7 @@ static CrackResult _crack_u64_with_len_enumerate(
     };
 
     enumerate_solver_result enum_result = enumerate_bounded_mod(
-        coeffs,
-        rhs,
-        MOD,
-        lower_bounds,
-        upper_bounds,
-        enum_bound,
-        max_enum_candidates,
-        _enum_u64_candidate,
-        &cb_ctx
+        coeffs, rhs, MOD, lower_bounds, upper_bounds, enum_bound, max_enum_candidates, _enum_u64_candidate, &cb_ctx
     );
 
     if (enum_result == ENUMERATE_SOLVER_INTERRUPTED) {
@@ -475,40 +423,20 @@ typedef struct {
     bool memory_error;
 } enum_fmpz_cb_ctx_t;
 
-static bool _enum_fmpz_candidate(
-    const int64_t* deltas,
-    uint32_t delta_len,
-    void* userdata
-) {
+static bool _enum_fmpz_candidate(const int64_t* deltas, uint32_t delta_len, void* userdata) {
     enum_fmpz_cb_ctx_t* cb_ctx = userdata;
     if (!_deltas_to_bytes_fmpz(
-        cb_ctx->ctx,
-        cb_ctx->new_hash,
-        cb_ctx->prime,
-        cb_ctx->modulus,
-        deltas,
-        delta_len,
-        cb_ctx->ret_buf
-    )) {
+            cb_ctx->ctx, cb_ctx->new_hash, cb_ctx->prime, cb_ctx->modulus, deltas, delta_len, cb_ctx->ret_buf
+        )) {
         return false;
     }
 
     fmpz_t hash;
     fmpz_init(hash);
     fnv_fmpz_with_len(
-        hash,
-        (char_buffer){cb_ctx->ret_buf, cb_ctx->delta_len},
-        cb_ctx->new_hash,
-        cb_ctx->prime,
-        cb_ctx->bit_len
+        hash, (char_buffer){cb_ctx->ret_buf, cb_ctx->delta_len}, cb_ctx->new_hash, cb_ctx->prime, cb_ctx->bit_len
     );
-    fnv_fmpz_with_len(
-        hash,
-        cb_ctx->suffix,
-        hash,
-        cb_ctx->prime,
-        cb_ctx->bit_len
-    );
+    fnv_fmpz_with_len(hash, cb_ctx->suffix, hash, cb_ctx->prime, cb_ctx->bit_len);
 
     const bool is_eq = fmpz_equal(hash, cb_ctx->target);
     fmpz_clear(hash);
@@ -517,11 +445,8 @@ static bool _enum_fmpz_candidate(
     }
 
     if (!_store_result_safe(
-        cb_ctx->prefix,
-        (char_buffer){cb_ctx->ret_buf, cb_ctx->delta_len},
-        cb_ctx->suffix,
-        cb_ctx->out_buffer
-    )) {
+            cb_ctx->prefix, (char_buffer){cb_ctx->ret_buf, cb_ctx->delta_len}, cb_ctx->suffix, cb_ctx->out_buffer
+        )) {
         cb_ctx->memory_error = true;
         return true;
     }
@@ -612,12 +537,7 @@ static CrackResult _crack_fmpz_with_len_enumerate(
             goto cleanup;
         }
 
-        if (!_store_result_safe(
-            prefix,
-            (char_buffer){ret_buf, 0},
-            suffix,
-            out_buffer
-        )) {
+        if (!_store_result_safe(prefix, (char_buffer){ret_buf, 0}, suffix, out_buffer)) {
             result = MEMORY_ERROR;
             goto cleanup;
         }
@@ -646,15 +566,7 @@ static CrackResult _crack_fmpz_with_len_enumerate(
     };
 
     enumerate_solver_result enum_result = enumerate_bounded_mod(
-        coeffs,
-        rhs,
-        MOD,
-        lower_bounds,
-        upper_bounds,
-        enum_bound,
-        max_enum_candidates,
-        _enum_fmpz_candidate,
-        &cb_ctx
+        coeffs, rhs, MOD, lower_bounds, upper_bounds, enum_bound, max_enum_candidates, _enum_fmpz_candidate, &cb_ctx
     );
 
     if (enum_result == ENUMERATE_SOLVER_INTERRUPTED) {
@@ -691,14 +603,7 @@ CrackResult crack_u64_with_len_limits(
     const uint32_t enum_bound,
     const uint64_t max_enum_candidates
 ) {
-    return _crack_u64_with_len_enumerate(
-        ctx,
-        target,
-        out_buffer,
-        expected_len,
-        enum_bound,
-        max_enum_candidates
-    );
+    return _crack_u64_with_len_enumerate(ctx, target, out_buffer, expected_len, enum_bound, max_enum_candidates);
 }
 
 CrackResult crack_fmpz_with_len_limits(
@@ -709,45 +614,18 @@ CrackResult crack_fmpz_with_len_limits(
     const uint32_t enum_bound,
     const uint64_t max_enum_candidates
 ) {
-    return _crack_fmpz_with_len_enumerate(
-        ctx,
-        target,
-        out_buffer,
-        expected_len,
-        enum_bound,
-        max_enum_candidates
-    );
+    return _crack_fmpz_with_len_enumerate(ctx, target, out_buffer, expected_len, enum_bound, max_enum_candidates);
 }
 
-CrackResult crack_u64_with_len(
-    context_t ctx,
-    uint64_t target,
-    char_buffer* out_buffer,
-    const uint32_t expected_len
-) {
+CrackResult crack_u64_with_len(context_t ctx, uint64_t target, char_buffer* out_buffer, const uint32_t expected_len) {
     return crack_u64_with_len_limits(
-        ctx,
-        target,
-        out_buffer,
-        expected_len,
-        CRACK_DEFAULT_ENUM_BOUND,
-        CRACK_DEFAULT_MAX_ENUM_CANDIDATES
+        ctx, target, out_buffer, expected_len, CRACK_DEFAULT_ENUM_BOUND, CRACK_DEFAULT_MAX_ENUM_CANDIDATES
     );
 }
 
-CrackResult crack_fmpz_with_len(
-    context_t ctx,
-    fmpz_t target,
-    char_buffer* out_buffer,
-    const uint32_t expected_len
-) {
+CrackResult crack_fmpz_with_len(context_t ctx, fmpz_t target, char_buffer* out_buffer, const uint32_t expected_len) {
     return crack_fmpz_with_len_limits(
-        ctx,
-        target,
-        out_buffer,
-        expected_len,
-        CRACK_DEFAULT_ENUM_BOUND,
-        CRACK_DEFAULT_MAX_ENUM_CANDIDATES
+        ctx, target, out_buffer, expected_len, CRACK_DEFAULT_ENUM_BOUND, CRACK_DEFAULT_MAX_ENUM_CANDIDATES
     );
 }
 
@@ -765,14 +643,7 @@ CrackResult crack_u64_limits(
     }
 
     if (max_search_len == 0) {
-        return crack_u64_with_len_limits(
-            ctx,
-            target,
-            out_buffer,
-            known_len,
-            enum_bound,
-            max_enum_candidates
-        );
+        return crack_u64_with_len_limits(ctx, target, out_buffer, known_len, enum_bound, max_enum_candidates);
     }
 
     for (uint32_t n = 1 + known_len; n <= max_search_len + known_len; ++n) {
@@ -780,14 +651,7 @@ CrackResult crack_u64_limits(
             return INTERRUPTED;
         }
 
-        CrackResult ret = crack_u64_with_len_limits(
-            ctx,
-            target,
-            out_buffer,
-            n,
-            enum_bound,
-            max_enum_candidates
-        );
+        CrackResult ret = crack_u64_with_len_limits(ctx, target, out_buffer, n, enum_bound, max_enum_candidates);
         if (ret == -1)
             continue;
 
@@ -811,14 +675,7 @@ CrackResult crack_fmpz_limits(
     }
 
     if (max_search_len == 0) {
-        return crack_fmpz_with_len_limits(
-            ctx,
-            target,
-            out_buffer,
-            known_len,
-            enum_bound,
-            max_enum_candidates
-        );
+        return crack_fmpz_with_len_limits(ctx, target, out_buffer, known_len, enum_bound, max_enum_candidates);
     }
 
     for (uint32_t n = 1 + known_len; n <= max_search_len + known_len; ++n) {
@@ -826,14 +683,7 @@ CrackResult crack_fmpz_limits(
             return INTERRUPTED;
         }
 
-        CrackResult ret = crack_fmpz_with_len_limits(
-            ctx,
-            target,
-            out_buffer,
-            n,
-            enum_bound,
-            max_enum_candidates
-        );
+        CrackResult ret = crack_fmpz_with_len_limits(ctx, target, out_buffer, n, enum_bound, max_enum_candidates);
         if (ret == -1)
             continue;
 
@@ -843,34 +693,14 @@ CrackResult crack_fmpz_limits(
     return FAILED;
 }
 
-CrackResult crack_u64(
-    context_t ctx,
-    const uint64_t target,
-    char_buffer* out_buffer,
-    const uint32_t max_search_len
-) {
+CrackResult crack_u64(context_t ctx, const uint64_t target, char_buffer* out_buffer, const uint32_t max_search_len) {
     return crack_u64_limits(
-        ctx,
-        target,
-        out_buffer,
-        max_search_len,
-        CRACK_DEFAULT_ENUM_BOUND,
-        CRACK_DEFAULT_MAX_ENUM_CANDIDATES
+        ctx, target, out_buffer, max_search_len, CRACK_DEFAULT_ENUM_BOUND, CRACK_DEFAULT_MAX_ENUM_CANDIDATES
     );
 }
 
-CrackResult crack_fmpz(
-    context_t ctx,
-    fmpz_t target,
-    char_buffer* out_buffer,
-    const uint32_t max_search_len
-) {
+CrackResult crack_fmpz(context_t ctx, fmpz_t target, char_buffer* out_buffer, const uint32_t max_search_len) {
     return crack_fmpz_limits(
-        ctx,
-        target,
-        out_buffer,
-        max_search_len,
-        CRACK_DEFAULT_ENUM_BOUND,
-        CRACK_DEFAULT_MAX_ENUM_CANDIDATES
+        ctx, target, out_buffer, max_search_len, CRACK_DEFAULT_ENUM_BOUND, CRACK_DEFAULT_MAX_ENUM_CANDIDATES
     );
 }

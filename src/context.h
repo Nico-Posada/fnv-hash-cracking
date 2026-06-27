@@ -45,7 +45,9 @@ struct _context_s {
 };
 
 typedef struct _context_s context_t[1];
-#define CREATE_CONTEXT(varname) context_t varname; memset(varname, 0, sizeof(context_t))
+#define CREATE_CONTEXT(varname)                                                                                        \
+    context_t varname;                                                                                                 \
+    memset(varname, 0, sizeof(context_t))
 
 /* debug */
 

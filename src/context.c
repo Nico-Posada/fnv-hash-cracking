@@ -4,15 +4,8 @@
 #include "crack.h"
 #include "fnv.h"
 
-bool _init_common(
-    context_t ctx,
-    uint32_t bits,
-    char_buffer valid_chars,
-    char_buffer prefix,
-    char_buffer suffix
-) {
-    if (!set_prefix(ctx, prefix) ||
-        !set_suffix(ctx, suffix)) {
+bool _init_common(context_t ctx, uint32_t bits, char_buffer valid_chars, char_buffer prefix, char_buffer suffix) {
+    if (!set_prefix(ctx, prefix) || !set_suffix(ctx, suffix)) {
         set_prefix(ctx, (char_buffer){NULL, 0});
         set_suffix(ctx, (char_buffer){NULL, 0});
         return false;
@@ -36,12 +29,7 @@ bool init_crack_ctx_with_len(
         return false;
     }
 
-    if (!_init_common(
-        ctx, bits,
-        valid_chars,
-        prefix,
-        suffix
-    )) {
+    if (!_init_common(ctx, bits, valid_chars, prefix, suffix)) {
         return false;
     }
 
@@ -62,7 +50,10 @@ bool init_crack_ctx(
     const char* suffix
 ) {
     return init_crack_ctx_with_len(
-        ctx, offset_basis, prime, bits,
+        ctx,
+        offset_basis,
+        prime,
+        bits,
         (char_buffer){valid_chars, valid_chars ? strlen(valid_chars) : 0},
         (char_buffer){prefix, prefix ? strlen(prefix) : 0},
         (char_buffer){suffix, suffix ? strlen(suffix) : 0}
@@ -82,12 +73,7 @@ bool init_crack_fmpz_ctx_with_len(
         return false;
     }
 
-    if (!_init_common(
-        ctx, bits,
-        valid_chars,
-        prefix,
-        suffix
-    )) {
+    if (!_init_common(ctx, bits, valid_chars, prefix, suffix)) {
         return false;
     }
 
@@ -110,7 +96,10 @@ bool init_crack_fmpz_ctx(
     const char* suffix
 ) {
     return init_crack_fmpz_ctx_with_len(
-        ctx, offset_basis, prime, bits,
+        ctx,
+        offset_basis,
+        prime,
+        bits,
         (char_buffer){valid_chars, valid_chars ? strlen(valid_chars) : 0},
         (char_buffer){prefix, prefix ? strlen(prefix) : 0},
         (char_buffer){suffix, suffix ? strlen(suffix) : 0}
@@ -134,8 +123,8 @@ void destroy_crack_ctx(context_t ctx) {
 }
 
 static bool _set_str_ref(char_buffer* ref, char_buffer str) {
-    if (ref->data == str.data || (ref->data && str.data && str.length == ref->length &&
-        memcmp(ref->data, str.data, str.length) == 0)) {
+    if (ref->data == str.data ||
+        (ref->data && str.data && str.length == ref->length && memcmp(ref->data, str.data, str.length) == 0)) {
         return true;
     }
 
@@ -186,8 +175,7 @@ void set_valid_chars(context_t ctx, char_buffer valid_chars) {
     if (valid_chars.data && valid_chars.length) {
         memset(ctx->valid_chars, 0, sizeof(ctx->valid_chars));
         _set_table_data(ctx->valid_chars, valid_chars);
-    }
-    else {
+    } else {
         // special case, if valid chars is not provided, we assume all chars are valid
         memset(ctx->valid_chars, 1, sizeof(ctx->valid_chars));
     }
@@ -259,13 +247,11 @@ void _fill_hex_char(char* out_buf, uint8_t c) {
         case '"':
             strcpy(out_buf, "\\\"");
             break;
-        default:
-        {
+        default: {
             if (0x20 <= c && c < 0x7f) {
                 out_buf[0] = c;
                 out_buf[1] = 0;
-            }
-            else {
+            } else {
                 sprintf(out_buf, "\\x%02hhx", c);
             }
         }
@@ -277,10 +263,13 @@ void print_context(context_t ctx) {
     printf("**********************\n");
     printf("initialized=%s\n", is_initialized(ctx) ? "true" : "false");
     if (ctx->uses_fmpz) {
-        printf("prime="); fmpz_print(get_prime_fmpz(ctx)); printf("\n");
-        printf("offset_basis="); fmpz_print(get_offset_basis_fmpz(ctx)); printf("\n");
-    }
-    else {
+        printf("prime=");
+        fmpz_print(get_prime_fmpz(ctx));
+        printf("\n");
+        printf("offset_basis=");
+        fmpz_print(get_offset_basis_fmpz(ctx));
+        printf("\n");
+    } else {
         printf("prime=0x%lx\noffset_basis=0x%lx\n", get_prime(ctx), get_offset_basis(ctx));
     }
     printf("bits=%u\n", ctx->bits);

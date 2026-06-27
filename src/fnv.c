@@ -5,12 +5,7 @@
 
 // internal version exists for the crack funcs to
 // use directly with known lengths
-uint64_t fnv_u64_with_len(
-    char_buffer data,
-    const uint64_t offset_basis,
-    const uint64_t prime,
-    const uint32_t bits
-) {
+uint64_t fnv_u64_with_len(char_buffer data, const uint64_t offset_basis, const uint64_t prime, const uint32_t bits) {
     uint64_t hash = offset_basis;
     for (size_t i = 0; i < data.length; ++i) {
         hash ^= (uint8_t)data.data[i];
@@ -26,31 +21,18 @@ uint64_t fnv_u64_with_len(
     return hash;
 }
 
-uint64_t fnv_u64(
-    const char* data,
-    const uint64_t offset_basis,
-    const uint64_t prime,
-    const uint32_t bits
-) {
-    return fnv_u64_with_len(
-        (char_buffer){data, strlen(data)},
-        offset_basis,
-        prime,
-        bits
-    );
+uint64_t fnv_u64(const char* data, const uint64_t offset_basis, const uint64_t prime, const uint32_t bits) {
+    return fnv_u64_with_len((char_buffer){data, strlen(data)}, offset_basis, prime, bits);
 }
 
 // MUST CALL `fmpz_clear` ON THE RETURN VALUE AFTER YOU USE IT
 void fnv_fmpz_with_len(
-    fmpz_t result,
-    char_buffer data,
-    const fmpz_t offset_basis,
-    const fmpz_t prime,
-    const uint32_t bits
+    fmpz_t result, char_buffer data, const fmpz_t offset_basis, const fmpz_t prime, const uint32_t bits
 ) {
     fmpz_t hash, mask, cur_char;
     fmpz_init_set(hash, offset_basis);
-    fmpz_init(mask); fmpz_init(cur_char);
+    fmpz_init(mask);
+    fmpz_init(cur_char);
     fmpz_ui_pow_ui(mask, 2, bits);
     fmpz_sub_ui(mask, mask, (ulong)1);
 
@@ -69,18 +51,6 @@ void fnv_fmpz_with_len(
     fmpz_clear(hash);
 }
 
-void fnv_fmpz(
-    fmpz_t result,
-    const char* data,
-    const fmpz_t offset_basis,
-    const fmpz_t prime,
-    const uint32_t bits
-) {
-    fnv_fmpz_with_len(
-        result,
-        (char_buffer){data, strlen(data)},
-        offset_basis,
-        prime,
-        bits
-    );
+void fnv_fmpz(fmpz_t result, const char* data, const fmpz_t offset_basis, const fmpz_t prime, const uint32_t bits) {
+    fnv_fmpz_with_len(result, (char_buffer){data, strlen(data)}, offset_basis, prime, bits);
 }

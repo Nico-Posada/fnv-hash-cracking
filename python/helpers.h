@@ -6,8 +6,7 @@
 #define MPZ_STR_BUF_SIZE 0x200
 
 // this is a gross way of converting from PyLong to fmpz num, but idc
-inline static bool
-_pylong_to_fmpz(fmpz_t result, PyObject* num) {
+inline static bool _pylong_to_fmpz(fmpz_t result, PyObject* num) {
     assert(PyLong_CheckExact(num));
     PyObject* num_str_obj = PyObject_Str(num);
     if (num_str_obj == NULL) {
@@ -25,8 +24,7 @@ _pylong_to_fmpz(fmpz_t result, PyObject* num) {
     return true;
 }
 
-inline static PyObject*
-_fmpz_to_pylong(const fmpz* num) {
+inline static PyObject* _fmpz_to_pylong(const fmpz* num) {
     char buf[MPZ_STR_BUF_SIZE];
     char* output_buf = (char*)buf;
     if (fmpz_sizeinbase(num, 16) + 2 >= MPZ_STR_BUF_SIZE) {
@@ -35,8 +33,7 @@ _fmpz_to_pylong(const fmpz* num) {
 
     char* ret_str = fmpz_get_str(output_buf, 16, num);
     if (!ret_str) {
-        PyErr_Format(PyExc_MemoryError,
-                     "Unable to allocate memory to convert from fmpz to Python int.");
+        PyErr_Format(PyExc_MemoryError, "Unable to allocate memory to convert from fmpz to Python int.");
         return NULL;
     }
 
@@ -48,18 +45,15 @@ _fmpz_to_pylong(const fmpz* num) {
     return result;
 }
 
-inline static PyObject*
-_number_to_pylong(fmpz_t fmpz_val, uint64_t u64_val, bool uses_fmpz) {
+inline static PyObject* _number_to_pylong(fmpz_t fmpz_val, uint64_t u64_val, bool uses_fmpz) {
     if (uses_fmpz) {
         return _fmpz_to_pylong(fmpz_val);
-    }
-    else {
+    } else {
         return PyLong_FromUnsignedLongLong(u64_val);
     }
 }
 
-inline static PyObject*
-_char_buffer_to_pyobj(char_buffer* buf) {
+inline static PyObject* _char_buffer_to_pyobj(char_buffer* buf) {
     if (buf->data == NULL || buf->length == 0) {
         // will return the cached b""
         return PyBytes_FromStringAndSize(NULL, 0);
@@ -68,17 +62,15 @@ _char_buffer_to_pyobj(char_buffer* buf) {
     return PyBytes_FromStringAndSize(buf->data, buf->length);
 }
 
-inline static PyObject*
-_fix_ctx_pylong_arg(PyObject* obj, const char* const argname, uint64_t default_arg) {
+inline static PyObject* _fix_ctx_pylong_arg(PyObject* obj, const char* const argname, uint64_t default_arg) {
     if (obj == NULL || Py_IsNone(obj)) {
         return PyLong_FromUnsignedLongLong(default_arg);
-    }
-    else if (!PyLong_CheckExact(obj)) {
-        PyErr_Format(PyExc_TypeError, "%s must be None or an int. Got object of type '%.200s'",
-                     argname, Py_TYPE(obj)->tp_name);
+    } else if (!PyLong_CheckExact(obj)) {
+        PyErr_Format(
+            PyExc_TypeError, "%s must be None or an int. Got object of type '%.200s'", argname, Py_TYPE(obj)->tp_name
+        );
         return NULL;
-    }
-    else {
+    } else {
         PyObject* zero = PyLong_FromLong(0);
         if (zero == NULL) {
             return NULL;
@@ -99,8 +91,7 @@ _fix_ctx_pylong_arg(PyObject* obj, const char* const argname, uint64_t default_a
 }
 #define _fix_ctx_pylong_arg(obj, default_arg) _fix_ctx_pylong_arg(obj, #obj, default_arg)
 
-inline static bool
-_ensure_odd_pylong_arg(PyObject* obj, const char* const argname) {
+inline static bool _ensure_odd_pylong_arg(PyObject* obj, const char* const argname) {
     const unsigned long long low_bits = PyLong_AsUnsignedLongLongMask(obj);
     if (PyErr_Occurred()) {
         return false;
@@ -114,8 +105,7 @@ _ensure_odd_pylong_arg(PyObject* obj, const char* const argname) {
     return true;
 }
 
-inline static bool
-_ensure_uint_pylong_arg_fits(PyObject* obj, const char* const argname, uint32_t bits) {
+inline static bool _ensure_uint_pylong_arg_fits(PyObject* obj, const char* const argname, uint32_t bits) {
     PyObject* zero = PyLong_FromLong(0);
     if (zero == NULL) {
         return false;
@@ -163,8 +153,7 @@ _parse_uint32_arg(PyObject* obj, const char* const argname, uint32_t* result, bo
                 goto bad_arg;
             }
 
-            PyErr_Format(PyExc_TypeError,
-                         "Missing argument value for %s", argname);
+            PyErr_Format(PyExc_TypeError, "Missing argument value for %s", argname);
             return 0;
         }
 
@@ -174,9 +163,7 @@ _parse_uint32_arg(PyObject* obj, const char* const argname, uint32_t* result, bo
 
     if (!PyLong_CheckExact(obj)) {
     bad_arg:
-        PyErr_Format(PyExc_TypeError,
-                     "%s must be an int, got '%.200s'",
-                     argname, Py_TYPE(obj)->tp_name);
+        PyErr_Format(PyExc_TypeError, "%s must be an int, got '%.200s'", argname, Py_TYPE(obj)->tp_name);
         return 0;
     }
 
@@ -202,8 +189,7 @@ _parse_uint64_arg(PyObject* obj, const char* const argname, uint64_t* result, bo
                 goto bad_arg;
             }
 
-            PyErr_Format(PyExc_TypeError,
-                         "Missing argument value for %s", argname);
+            PyErr_Format(PyExc_TypeError, "Missing argument value for %s", argname);
             return 0;
         }
 
@@ -213,9 +199,7 @@ _parse_uint64_arg(PyObject* obj, const char* const argname, uint64_t* result, bo
 
     if (!PyLong_CheckExact(obj)) {
     bad_arg:
-        PyErr_Format(PyExc_TypeError,
-                     "%s must be an int, got '%.200s'",
-                     argname, Py_TYPE(obj)->tp_name);
+        PyErr_Format(PyExc_TypeError, "%s must be an int, got '%.200s'", argname, Py_TYPE(obj)->tp_name);
         return 0;
     }
 
@@ -233,12 +217,9 @@ _parse_uint64_arg(PyObject* obj, const char* const argname, uint64_t* result, bo
 }
 #define _parse_uint64_arg(obj, result, optional, default) _parse_uint64_arg(obj, #obj, result, optional, default)
 
-static int
-_parse_bool_arg(PyObject* obj, const char* const argname, bool* result) {
+static int _parse_bool_arg(PyObject* obj, const char* const argname, bool* result) {
     if (!PyBool_Check(obj)) {
-        PyErr_Format(PyExc_TypeError,
-                     "%s must be a bool, got '%.200s'",
-                     argname, Py_TYPE(obj)->tp_name);
+        PyErr_Format(PyExc_TypeError, "%s must be a bool, got '%.200s'", argname, Py_TYPE(obj)->tp_name);
         return 0;
     }
 
