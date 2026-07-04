@@ -12,4 +12,8 @@ void fnv_fmpz_with_len(
     fmpz_t result, char_buffer data, const fmpz_t offset_basis, const fmpz_t prime, const uint32_t bits
 );
 
+void fnv_fmpz_with_len_mask(
+    fmpz_t result, char_buffer data, const fmpz_t offset_basis, const fmpz_t prime, const fmpz_t mask
+);
+
 void fnv_fmpz(fmpz_t result, const char* data, const fmpz_t offset_basis, const fmpz_t prime, const uint32_t bits);

@@ -8,17 +8,14 @@
 
 typedef struct {
     const fmpz_mat_struct* basis;
-    const fmpz_mat_struct* tail_abs;
     const fmpz_mat_struct* fit_min;
     const fmpz_mat_struct* fit_max;
     fmpz_mat_struct* current;
-    const int64_t* lower_bounds;
-    const int64_t* upper_bounds;
     enumerate_solution_cb cb;
     void* cb_ctx;
     int64_t* deltas;
     uint32_t dim;
-    uint32_t enum_bound;
+    uint32_t width;
     uint64_t max_candidates;
     uint64_t candidates;
     bool found;
@@ -94,11 +91,12 @@ static void _sort_rows_desc(fmpz_mat_t M) {
     fmpz_init(nj);
 
     for (slong i = 0; i < n; ++i) {
+        _row_norm_sq(ni, M, i);
         for (slong j = i + 1; j < n; ++j) {
-            _row_norm_sq(ni, M, i);
             _row_norm_sq(nj, M, j);
             if (fmpz_cmp(ni, nj) < 0) {
                 _swap_rows(M, i, j);
+                fmpz_swap(ni, nj);
             }
         }
     }
@@ -234,8 +232,18 @@ static void _add_basis_row(enum_search_t* ctx, uint32_t row, int64_t scale) {
         return;
     }
 
-    for (uint32_t j = 0; j < ctx->dim; ++j) {
-        fmpz_addmul_si(fmpz_mat_entry(ctx->current, 0, j), fmpz_mat_entry(ctx->basis, row, j), scale);
+    if (scale == 1) {
+        for (uint32_t j = 0; j < ctx->dim; ++j) {
+            fmpz_add(
+                fmpz_mat_entry(ctx->current, 0, j),
+                fmpz_mat_entry(ctx->current, 0, j),
+                fmpz_mat_entry(ctx->basis, row, j)
+            );
+        }
+    } else {
+        for (uint32_t j = 0; j < ctx->dim; ++j) {
+            fmpz_addmul_si(fmpz_mat_entry(ctx->current, 0, j), fmpz_mat_entry(ctx->basis, row, j), scale);
+        }
     }
 }
 
@@ -248,20 +256,37 @@ static void _search(enum_search_t* ctx, uint32_t depth) {
         return;
     }
 
-    if (depth == ctx->dim) {
-        _emit_candidate(ctx);
+    const uint32_t next_depth = depth + 1;
+    int64_t prev_off = 0;
+    if (next_depth == ctx->dim) {
+        for (uint32_t i = 0; i < ctx->width; ++i) {
+            const int64_t off = _offset_for_index(i);
+            _add_basis_row(ctx, depth, off - prev_off);
+            prev_off = off;
+
+            if (fnvcrack_interrupted()) {
+                ctx->interrupted = true;
+            } else if (_can_still_fit(ctx, next_depth)) {
+                _emit_candidate(ctx);
+            }
+
+            if (ctx->found || ctx->hit_limit || ctx->interrupted) {
+                _add_basis_row(ctx, depth, -prev_off);
+                return;
+            }
+        }
+
+        _add_basis_row(ctx, depth, -prev_off);
         return;
     }
 
-    const uint32_t width = ctx->enum_bound * 2 + 1;
-    int64_t prev_off = 0;
-    for (uint32_t i = 0; i < width; ++i) {
+    for (uint32_t i = 0; i < ctx->width; ++i) {
         const int64_t off = _offset_for_index(i);
         _add_basis_row(ctx, depth, off - prev_off);
         prev_off = off;
 
-        if (_can_still_fit(ctx, depth + 1)) {
-            _search(ctx, depth + 1);
+        if (_can_still_fit(ctx, next_depth)) {
+            _search(ctx, next_depth);
         }
 
         if (ctx->found || ctx->hit_limit || ctx->interrupted) {
@@ -374,17 +399,14 @@ enumerate_solver_result enumerate_bounded_mod(
 
     enum_search_t search_ctx = {
         .basis = reduced,
-        .tail_abs = tail_abs,
         .fit_min = fit_min,
         .fit_max = fit_max,
         .current = base,
-        .lower_bounds = lower_bounds,
-        .upper_bounds = upper_bounds,
         .cb = cb,
         .cb_ctx = cb_ctx,
         .deltas = deltas,
         .dim = (uint32_t)n,
-        .enum_bound = enum_bound,
+        .width = enum_bound * 2 + 1,
         .max_candidates = max_candidates,
         .candidates = 0,
         .found = false,
