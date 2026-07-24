@@ -73,16 +73,6 @@ static void _row_norm_sq(fmpz_t out, const fmpz_mat_t M, slong row) {
     fmpz_clear(tmp);
 }
 
-static void _swap_rows(fmpz_mat_t M, slong a, slong b) {
-    if (a == b) {
-        return;
-    }
-
-    const slong n = fmpz_mat_ncols(M);
-    for (slong j = 0; j < n; ++j) {
-        fmpz_swap(fmpz_mat_entry(M, a, j), fmpz_mat_entry(M, b, j));
-    }
-}
 
 static void _sort_rows_desc(fmpz_mat_t M) {
     const slong n = fmpz_mat_nrows(M);
@@ -95,7 +85,7 @@ static void _sort_rows_desc(fmpz_mat_t M) {
         for (slong j = i + 1; j < n; ++j) {
             _row_norm_sq(nj, M, j);
             if (fmpz_cmp(ni, nj) < 0) {
-                _swap_rows(M, i, j);
+                fmpz_mat_swap_rows(M, NULL, i, j);
                 fmpz_swap(ni, nj);
             }
         }
@@ -336,12 +326,11 @@ enumerate_solver_result enumerate_bounded_mod(
         return ENUMERATE_SOLVER_DONE;
     }
 
-    fmpz_mat_t solution, basis, reduced, transform, target, coords, closest, base;
+    fmpz_mat_t solution, basis, reduced, target, coords, closest, base;
     fmpz_mat_t tail_abs, fit_min, fit_max;
     fmpz_mat_init(solution, 1, n);
     fmpz_mat_init(basis, n, n);
     fmpz_mat_init(reduced, n, n);
-    fmpz_mat_init(transform, n, n);
     fmpz_mat_init(target, 1, n);
     fmpz_mat_init(coords, 1, n);
     fmpz_mat_init(closest, 1, n);
@@ -365,10 +354,9 @@ enumerate_solver_result enumerate_bounded_mod(
     fmpz_set(fmpz_mat_entry(basis, n - 1, 0), modulus);
 
     fmpz_mat_set(reduced, basis);
-    fmpz_mat_one(transform);
     fmpz_lll_t fl;
     fmpz_lll_context_init_default(fl);
-    fmpz_lll_d(reduced, transform, fl);
+    fmpz_lll_d(reduced, NULL, fl);
     if (fnvcrack_interrupted()) {
         result = ENUMERATE_SOLVER_INTERRUPTED;
         goto cleanup;
@@ -434,7 +422,6 @@ cleanup:
     fmpz_mat_clear(closest);
     fmpz_mat_clear(coords);
     fmpz_mat_clear(target);
-    fmpz_mat_clear(transform);
     fmpz_mat_clear(reduced);
     fmpz_mat_clear(basis);
     fmpz_mat_clear(solution);

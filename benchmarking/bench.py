@@ -80,11 +80,11 @@ def valid_chars_from_pattern(pattern):
     return bytes(sorted(chars))
 
 
-def generate_cases(args):
+def generate_cases(args, count=None):
     pattern = decode_escapes(args.pattern)
     random.seed(args.seed)
 
-    for index in range(args.count):
+    for index in range(args.count if count is None else count):
         unknown = text_to_bytes(exrex.getone(pattern), "--pattern")
         plaintext = args.prefix + unknown + args.suffix
         target = fnv1a(plaintext, args.offset_basis, args.prime, args.bit_length)
@@ -139,6 +139,7 @@ def base_config(args, valid_chars):
         "valid_chars_count": len(valid_chars),
         "valid_chars_hex": valid_chars.hex(),
         "count": args.count,
+        "warmup": args.warmup,
         "seed": args.seed,
         "incremental": args.incremental,
         "enum_bound": args.enum_bound,
@@ -149,6 +150,16 @@ def base_config(args, valid_chars):
         "prefix_hex": args.prefix.hex(),
         "suffix_hex": args.suffix.hex(),
     }
+
+
+def _crack_case(ctx, case, args):
+    return ctx.crack(
+        case["target_hash"],
+        crack_len=case["crack_len"],
+        enum_bound=args.enum_bound,
+        max_enum_candidates=args.max_enum_candidates,
+        incremental=args.incremental,
+    )
 
 
 def run_perf(args):
@@ -162,16 +173,14 @@ def run_perf(args):
         suffix=args.suffix,
     )
 
+    cases = generate_cases(args, args.warmup + args.count)
+    for _ in range(args.warmup):
+        _crack_case(ctx, next(cases), args)
+
     rows = []
-    for case in generate_cases(args):
+    for case in cases:
         start = time.perf_counter_ns()
-        result = ctx.crack(
-            case["target_hash"],
-            crack_len=case["crack_len"],
-            enum_bound=args.enum_bound,
-            max_enum_candidates=args.max_enum_candidates,
-            incremental=args.incremental,
-        )
+        result = _crack_case(ctx, case, args)
         elapsed_ns = time.perf_counter_ns() - start
 
         result_hex = result.value.hex() if result.value is not None else None
@@ -214,6 +223,8 @@ def child_perf_args(args):
         args.valid_chars_pattern,
         "-n",
         str(args.count),
+        "--warmup",
+        str(args.warmup),
         "-b",
         str(args.enum_bound),
         "-m",
@@ -618,6 +629,7 @@ def add_common_args(parser):
     parser.add_argument("-p", "--pattern", required=True)
     parser.add_argument("-c", "--valid-chars-pattern", required=True)
     parser.add_argument("-n", "--count", type=int, required=True)
+    parser.add_argument("--warmup", type=int, default=0)
     parser.add_argument("-b", "--enum-bound", type=int, required=True)
     parser.add_argument("-m", "--max-enum-candidates", type=int, required=True)
     parser.add_argument(
@@ -685,6 +697,8 @@ def parse_args(argv):
 
     if args.count <= 0:
         parser.error("--count must be positive")
+    if args.warmup < 0:
+        parser.error("--warmup cannot be negative")
     if args.enum_bound < 0:
         parser.error("--enum-bound cannot be negative")
     if args.max_enum_candidates < 0:

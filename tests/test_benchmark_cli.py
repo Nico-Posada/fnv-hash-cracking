@@ -80,6 +80,54 @@ class BenchmarkCliTestCase(unittest.TestCase):
         self.assertEqual(args.seed, 123)
         self.assertEqual(args.detail, "summary")
 
+    def test_warmup_defaults_to_zero(self):
+        args = self.parse_minimal("-s", "123")
+        self.assertEqual(args.warmup, 0)
+        self.assertEqual(bench.run_perf(args)["config"]["warmup"], 0)
+
+    def test_negative_warmup_is_rejected(self):
+        stderr = mock.MagicMock()
+        with mock.patch("sys.stderr", stderr), self.assertRaises(SystemExit):
+            bench.parse_args([
+                "perf",
+                "-p",
+                "[a]",
+                "-c",
+                "[a]",
+                "-n",
+                "1",
+                "--warmup",
+                "-1",
+                "-b",
+                "4",
+                "-m",
+                "0",
+                "-I",
+            ])
+        self.assertIn("--warmup cannot be negative", "".join(call.args[0] for call in stderr.write.call_args_list))
+
+    def test_warmup_is_not_timed_or_recorded(self):
+        args = self.parse_minimal(
+            "-p",
+            "[a-c]",
+            "-c",
+            "[a-c]",
+            "-n",
+            "2",
+            "--warmup",
+            "3",
+            "-s",
+            "7",
+        )
+        result = bench.run_perf(args)
+        self.assertEqual(result["summary"]["count"], 2)
+        self.assertEqual([case["index"] for case in result["cases"]], [3, 4])
+
+    def test_child_perf_args_forward_warmup(self):
+        child = bench.child_perf_args(self.parse_minimal("--warmup", "3"))
+        index = child.index("--warmup")
+        self.assertEqual(child[index + 1], "3")
+
     def test_hex_integer_flags_parse(self):
         args = self.parse_minimal("-o", "0xff", "-r", "0xb3")
         self.assertEqual(args.offset_basis, 255)
