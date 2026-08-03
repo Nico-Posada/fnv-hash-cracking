@@ -1,8 +1,13 @@
 # Compiler and flags
-CC = gcc
-CFLAGS = -march=native -O3
+CC ?= cc
+PKG_CONFIG ?= pkg-config
+CFLAGS ?= -march=native -O3
 # CFLAGS = -march=native -g
-LIBRARIES = -lflint -lgmp
+
+FLINT_CFLAGS := $(shell $(PKG_CONFIG) --cflags flint 2>/dev/null)
+FLINT_LIBS := $(shell $(PKG_CONFIG) --libs flint 2>/dev/null)
+CPPFLAGS += $(FLINT_CFLAGS)
+LDLIBS += -lflint $(if $(FLINT_LIBS),$(filter-out -lflint,$(FLINT_LIBS)),-lmpfr -lgmp)
 
 # Target executable name
 TARGET = main
@@ -24,11 +29,11 @@ build: $(TARGET)
 
 # Build the main executable from all object files
 $(TARGET): $(OBJECTS)
-	$(CC) $(CFLAGS) -o $@ $^ $(LIBRARIES)
+	$(CC) $(LDFLAGS) -o $@ $^ $(LDLIBS)
 
 # Pattern rule to compile .c files to .o files
 %.o: %.c $(HEADERS)
-	$(CC) $(CFLAGS) -c $< -o $@ $(LIBRARIES)
+	$(CC) $(CPPFLAGS) $(CFLAGS) -c $< -o $@
 
 # Clean up generated files
 clean:
@@ -45,7 +50,7 @@ build-pyext-coverage:
 
 coverage-c-probe:
 	mkdir -p build
-	$(CC) -O0 -g --coverage -Wall -Isrc tests/c_coverage_probe.c $(C_COVERAGE_SOURCES) -o build/c_coverage_probe $(LIBRARIES) -lmpfr
+	$(CC) $(CPPFLAGS) $(CFLAGS) -O0 -g --coverage -Wall -Isrc tests/c_coverage_probe.c $(C_COVERAGE_SOURCES) $(LDFLAGS) -o build/c_coverage_probe $(LDLIBS)
 	./build/c_coverage_probe
 
 coverage-c: clean-c-coverage build-pyext-coverage

@@ -21,6 +21,16 @@ This project requires the following libraries:
 sudo apt install build-essential libgmp-dev libflint-dev -y
 ```
 
+#### macOS with Homebrew
+```bash
+brew install flint pkgconf
+```
+
+Both the Makefile and Python extension build read FLINT's `pkg-config` metadata, which supplies the
+include and library directories for FLINT, GMP, and MPFR automatically. For a nonstandard FLINT
+installation, add the directory containing `flint.pc` to `PKG_CONFIG_PATH`; no compiler include path
+needs to be passed to `make` or `setup.py`.
+
 For other platforms or building from source, consult the [GMP documentation](https://gmplib.org/manual/) and [FLINT documentation](https://flintlib.org/doc/).
 
 ## Building

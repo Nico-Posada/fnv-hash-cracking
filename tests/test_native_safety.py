@@ -1,4 +1,5 @@
 import resource
+import sys
 import unittest
 from contextlib import contextmanager
 
@@ -13,6 +14,9 @@ def _current_address_space():
 
 @contextmanager
 def _limited_address_space(extra_bytes):
+    if sys.platform != "linux":
+        raise unittest.SkipTest("requires Linux /proc and RLIMIT_AS semantics")
+
     old_limit = resource.getrlimit(resource.RLIMIT_AS)
     soft = _current_address_space() + extra_bytes
     hard = old_limit[1]

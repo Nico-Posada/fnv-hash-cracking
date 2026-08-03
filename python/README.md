@@ -16,6 +16,16 @@ On Ubuntu and Debian:
 sudo apt install build-essential libgmp-dev libflint-dev -y
 ```
 
+On macOS with Homebrew:
+
+```bash
+brew install flint pkgconf
+```
+
+The extension build discovers FLINT, GMP, and MPFR through `pkg-config`. For a nonstandard FLINT
+installation, add the directory containing `flint.pc` to `PKG_CONFIG_PATH` instead of passing include
+and library paths to the compiler.
+
 ## Development With uv
 
 From the repository root:

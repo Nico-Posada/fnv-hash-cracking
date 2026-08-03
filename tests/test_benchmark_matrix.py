@@ -51,6 +51,8 @@ class BenchmarkMatrixTestCase(unittest.TestCase):
             candidate_package = root / "candidate-package"
             baseline_package.mkdir()
             candidate_package.mkdir()
+            baseline_package = baseline_package.resolve()
+            candidate_package = candidate_package.resolve()
             output = root / "results"
             args = argparse.Namespace(
                 phase="development",

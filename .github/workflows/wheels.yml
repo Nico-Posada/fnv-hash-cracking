@@ -1,4 +1,4 @@
-name: Linux wheels
+name: Wheels
 
 on:
   push:
@@ -48,7 +48,7 @@ jobs:
       - name: Test source package
         run: uv run --python ${{ matrix.python-version }} --group dev pytest
 
-  build-wheels:
+  build-linux-wheels:
     name: manylinux wheels
     runs-on: ubuntu-latest
 
@@ -67,6 +67,42 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: fnvcrack-manylinux-wheels
+          path: wheelhouse/*.whl
+
+  build-macos-wheels:
+    name: macOS ${{ matrix.arch }} wheels
+    runs-on: ${{ matrix.runner }}
+
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: macos-15-intel
+            arch: x86_64
+            deployment_target: "15.0"
+          - runner: macos-14
+            arch: arm64
+            deployment_target: "14.0"
+
+    env:
+      CIBW_ARCHS_MACOS: ${{ matrix.arch }}
+      MACOSX_DEPLOYMENT_TARGET: ${{ matrix.deployment_target }}
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Build wheels
+        uses: pypa/cibuildwheel@v3.4.1
+        with:
+          extras: uv
+          output-dir: wheelhouse
+
+      - name: Upload release artifacts
+        if: github.event_name == 'release' || startsWith(github.ref, 'refs/tags/')
+        uses: actions/upload-artifact@v4
+        with:
+          name: fnvcrack-macos-${{ matrix.arch }}-wheels
           path: wheelhouse/*.whl
 
   build-sdist:
@@ -102,7 +138,8 @@ jobs:
     if: github.event_name == 'release' && github.event.action == 'published'
     needs:
       - test
-      - build-wheels
+      - build-linux-wheels
+      - build-macos-wheels
       - build-sdist
     runs-on: ubuntu-latest
     permissions:

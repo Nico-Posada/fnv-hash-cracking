@@ -1,25 +1,38 @@
 import glob
 import os
+import shlex
+import subprocess
 import sys
 
 from setuptools import Extension, find_packages, setup
 from setuptools.command.build_ext import build_ext
 
 
-deps_dir = os.environ.get("FNVCRACK_DEPS")
 coverage_enabled = os.environ.get("FNVCRACK_COVERAGE") == "1"
 extra_compile_args = ["/O2"] if sys.platform == "win32" else ["-O3", "-Wall"]
 extra_link_args = []
 include_dirs = ["src"]
 library_dirs = []
 
+
+def _pkg_config_paths(option, prefix):
+    try:
+        output = subprocess.check_output(
+            [os.environ.get("PKG_CONFIG", "pkg-config"), option, "flint"],
+            stderr=subprocess.DEVNULL,
+            text=True,
+        )
+    except (FileNotFoundError, subprocess.CalledProcessError):
+        return []
+
+    return [arg.removeprefix(prefix) for arg in shlex.split(output) if arg.startswith(prefix)]
+
 if coverage_enabled and sys.platform != "win32":
     extra_compile_args = ["-O0", "-g", "--coverage", "-Wall"]
     extra_link_args = ["--coverage"]
 
-if deps_dir:
-    include_dirs.append(os.path.join(deps_dir, "include"))
-    library_dirs.append(os.path.join(deps_dir, "lib"))
+include_dirs.extend(_pkg_config_paths("--cflags-only-I", "-I"))
+library_dirs.extend(_pkg_config_paths("--libs-only-L", "-L"))
 
 
 def _portable_compiler_args(args):

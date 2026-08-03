@@ -40,10 +40,13 @@ replace = '''name = "fnvcrack"
 version = "{new_version}"'''
 
 [tool.cibuildwheel]
-build = "cp311-manylinux_x86_64 cp312-manylinux_x86_64 cp313-manylinux_x86_64 cp314-manylinux_x86_64"
+build = "cp{311,312,313,314}-{manylinux_x86_64,macosx_x86_64,macosx_arm64}"
 build-frontend = "build[uv]"
-test-requires = ["pytest"]
+test-requires = ["exrex", "pytest", "pytest-cov"]
 test-command = "python -m pytest {project}/tests"
+
+[tool.cibuildwheel.macos]
+before-all = "brew install flint pkgconf"
 
 [tool.cibuildwheel.linux]
 archs = ["x86_64"]
@@ -53,6 +56,5 @@ repair-wheel-command = "auditwheel repair --plat manylinux_2_28_x86_64 --lib-sdi
 
 [tool.cibuildwheel.linux.environment]
 FNVCRACK_DEPS = "/opt/fnvcrack-deps"
-LDFLAGS = "-L/opt/fnvcrack-deps/lib"
 LD_LIBRARY_PATH = "/opt/fnvcrack-deps/lib"
 PKG_CONFIG_PATH = "/opt/fnvcrack-deps/lib/pkgconfig"
