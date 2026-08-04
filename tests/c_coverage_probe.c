@@ -1,4 +1,6 @@
 #include <assert.h>
+#include <errno.h>
+#include <signal.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -15,6 +17,13 @@
 
 #define FNV64_OFFSET_BASIS 0xcbf29ce484222325ULL
 #define FNV64_PRIME 0x100000001b3ULL
+
+static volatile sig_atomic_t sentinel_called = 0;
+
+static void sentinel_sigint_handler(int sig) {
+    (void)sig;
+    sentinel_called = 1;
+}
 
 static char_buffer buf(const char* data) {
     return (char_buffer){data, strlen(data)};
@@ -59,14 +68,60 @@ static bool limit_address_space(size_t extra, struct rlimit* old_limit) {
 }
 
 static void check_interrupt_api(void) {
+    struct sigaction original_action;
+    assert(sigaction(SIGINT, NULL, &original_action) == 0);
+
+    struct sigaction sentinel_action;
+    memset(&sentinel_action, 0, sizeof(sentinel_action));
+    sentinel_action.sa_handler = sentinel_sigint_handler;
+    assert(sigemptyset(&sentinel_action.sa_mask) == 0);
+    assert(sigaddset(&sentinel_action.sa_mask, SIGTERM) == 0);
+    sentinel_action.sa_flags = SA_RESTART;
+    assert(sigaction(SIGINT, &sentinel_action, NULL) == 0);
+
     assert(fnvcrack_restore_interrupt_handler() == 0);
     assert(fnvcrack_install_interrupt_handler() == 0);
     assert(fnvcrack_install_interrupt_handler() == 0);
+    assert(raise(SIGINT) == 0);
+    assert(fnvcrack_interrupted());
+
+    assert(fnvcrack_install_interrupt_handler() == 0);
+    assert(fnvcrack_interrupted());
+    assert(fnvcrack_restore_interrupt_handler() == 0);
+    assert(fnvcrack_interrupted());
     assert(fnvcrack_restore_interrupt_handler() == 0);
     assert(fnvcrack_restore_interrupt_handler() == 0);
-    assert(fnvcrack_restore_interrupt_handler() == 0);
-    fnvcrack_clear_interrupt();
+
+    struct sigaction restored_action;
+    assert(sigaction(SIGINT, NULL, &restored_action) == 0);
+    assert(restored_action.sa_handler == sentinel_sigint_handler);
+    assert(sigismember(&restored_action.sa_mask, SIGTERM) == 1);
+    assert((restored_action.sa_flags & SA_RESTART) != 0);
+
+    sentinel_called = 0;
+    assert(raise(SIGINT) == 0);
+    assert(sentinel_called == 1);
+
+    assert(fnvcrack_install_interrupt_handler() == 0);
     assert(!fnvcrack_interrupted());
+
+    struct sigaction takeover_action;
+    memset(&takeover_action, 0, sizeof(takeover_action));
+    takeover_action.sa_handler = SIG_IGN;
+    assert(sigemptyset(&takeover_action.sa_mask) == 0);
+    assert(sigaction(SIGINT, &takeover_action, NULL) == 0);
+
+    errno = 0;
+    assert(fnvcrack_install_interrupt_handler() == -1);
+    assert(errno == EBUSY);
+    assert(fnvcrack_restore_interrupt_handler() == 0);
+    assert(fnvcrack_restore_interrupt_handler() == 0);
+
+    assert(sigaction(SIGINT, NULL, &restored_action) == 0);
+    assert(restored_action.sa_handler == SIG_IGN);
+    assert(sigaction(SIGINT, &sentinel_action, NULL) == 0);
+
+    assert(sigaction(SIGINT, &original_action, NULL) == 0);
 }
 
 static void check_inverse_api(void) {

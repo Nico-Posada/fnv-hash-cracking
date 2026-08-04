@@ -1,5 +1,6 @@
 #include "crack_context.h"
 #include "helpers.h"
+#include "interrupt.h"
 
 #ifdef FNVCRACK_PYTHON_EXTENSION
 #define FNVCRACK_BEGIN_ALLOW_THREADS Py_BEGIN_ALLOW_THREADS
@@ -382,23 +383,50 @@ PyObject* CrackContext_crack(CrackContext* self, PyObject* args, PyObject* kwds)
     }
 
     char_buffer output = {NULL, 0};
-    CrackResult crack_result;
-    fnvcrack_clear_interrupt();
-    if (fnvcrack_install_interrupt_handler() != 0) {
-        PyErr_SetString(CrackException, "Failed to install interrupt handler");
+    CrackResult crack_result = FAILED;
+    fmpz_t target_fmpz;
+    bool target_fmpz_initialized = false;
+    uint64_t target_u64 = 0;
+
+    if (self->ctx->uses_fmpz) {
+        fmpz_init(target_fmpz);
+        target_fmpz_initialized = true;
+        if (!_pylong_to_fmpz(target_fmpz, target)) {
+            fmpz_clear(target_fmpz);
+            return NULL;
+        }
+    } else {
+        target_u64 = PyLong_AsUnsignedLongLong(target);
+        if (target_u64 == (uint64_t)-1 && PyErr_Occurred()) {
+            return NULL;
+        }
+    }
+
+    if (PyErr_CheckSignals() != 0) {
+        if (target_fmpz_initialized) {
+            fmpz_clear(target_fmpz);
+        }
         return NULL;
     }
 
-    if (self->ctx->uses_fmpz) {
-        fmpz_t target_fmpz;
-        fmpz_init(target_fmpz);
-        if (!_pylong_to_fmpz(target_fmpz, target)) {
+    bool lease_acquired = false;
+    bool sync_failed = false;
+    if (fnvcrack_install_interrupt_handler() != 0) {
+        if (target_fmpz_initialized) {
             fmpz_clear(target_fmpz);
-            fnvcrack_restore_interrupt_handler();
-            return NULL;
         }
+        PyErr_SetString(CrackException, "Failed to install interrupt handler");
+        return NULL;
+    }
+    lease_acquired = true;
 
-        FNVCRACK_BEGIN_ALLOW_THREADS
+    if (fnvcrack_sync_python_interrupt() != 0) {
+        sync_failed = true;
+        goto cleanup_acquired;
+    }
+
+    FNVCRACK_BEGIN_ALLOW_THREADS
+    if (self->ctx->uses_fmpz) {
         if (incremental) {
             crack_result =
                 crack_fmpz_limits(self->ctx, target_fmpz, &output, crack_len, enum_bound, max_enum_candidates);
@@ -407,32 +435,51 @@ PyObject* CrackContext_crack(CrackContext* self, PyObject* args, PyObject* kwds)
                 self->ctx, target_fmpz, &output, crack_len + (uint32_t)known_len, enum_bound, max_enum_candidates
             );
         }
-        FNVCRACK_END_ALLOW_THREADS
-        fmpz_clear(target_fmpz);
+    } else if (incremental) {
+        crack_result =
+            crack_u64_limits(self->ctx, target_u64, &output, crack_len, enum_bound, max_enum_candidates);
     } else {
-        uint64_t target_u64;
-        target_u64 = PyLong_AsUnsignedLongLong(target);
-        if (target_u64 == (uint64_t)-1 && PyErr_Occurred()) {
-            fnvcrack_restore_interrupt_handler();
-            return NULL;
-        }
-
-        FNVCRACK_BEGIN_ALLOW_THREADS
-        if (incremental) {
-            crack_result = crack_u64_limits(self->ctx, target_u64, &output, crack_len, enum_bound, max_enum_candidates);
-        } else {
-            crack_result = crack_u64_with_len_limits(
-                self->ctx, target_u64, &output, crack_len + (uint32_t)known_len, enum_bound, max_enum_candidates
-            );
-        }
-        FNVCRACK_END_ALLOW_THREADS
+        crack_result = crack_u64_with_len_limits(
+            self->ctx, target_u64, &output, crack_len + (uint32_t)known_len, enum_bound, max_enum_candidates
+        );
     }
-    fnvcrack_restore_interrupt_handler();
+    FNVCRACK_END_ALLOW_THREADS
 
-    if (crack_result == INTERRUPTED) {
+cleanup_acquired:
+    if (target_fmpz_initialized) {
+        fmpz_clear(target_fmpz);
+    }
+
+    int release_result = 0;
+    if (lease_acquired) {
+        release_result = fnvcrack_restore_interrupt_handler();
+        lease_acquired = false;
+    }
+    bool interrupted = crack_result == INTERRUPTED || fnvcrack_interrupted();
+
+    if (sync_failed) {
         clear_char_buffer(&output);
-        PyErr_SetNone(PyExc_KeyboardInterrupt);
         return NULL;
+    }
+
+    if (interrupted) {
+        clear_char_buffer(&output);
+    }
+    if (PyErr_CheckSignals() != 0) {
+        if (!interrupted) {
+            clear_char_buffer(&output);
+        }
+        return NULL;
+    }
+    if (release_result != 0) {
+        if (!interrupted) {
+            clear_char_buffer(&output);
+        }
+        PyErr_SetString(CrackException, "Failed to restore interrupt handler");
+        return NULL;
+    }
+    if (interrupted) {
+        return Py_BuildValue("(iO)", INTERRUPTED, Py_None);
     }
 
     PyObject* result;

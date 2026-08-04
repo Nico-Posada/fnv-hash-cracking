@@ -2,11 +2,12 @@
 CC ?= cc
 PKG_CONFIG ?= pkg-config
 CFLAGS ?= -march=native -O3
+CFLAGS += -std=c11
 # CFLAGS = -march=native -g
 
 FLINT_CFLAGS := $(shell $(PKG_CONFIG) --cflags flint 2>/dev/null)
 FLINT_LIBS := $(shell $(PKG_CONFIG) --libs flint 2>/dev/null)
-CPPFLAGS += $(FLINT_CFLAGS)
+CPPFLAGS += -D_POSIX_C_SOURCE=200809L $(FLINT_CFLAGS)
 LDLIBS += -lflint $(if $(FLINT_LIBS),$(filter-out -lflint,$(FLINT_LIBS)),-lmpfr -lgmp)
 
 # Target executable name

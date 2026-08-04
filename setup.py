@@ -9,7 +9,7 @@ from setuptools.command.build_ext import build_ext
 
 
 coverage_enabled = os.environ.get("FNVCRACK_COVERAGE") == "1"
-extra_compile_args = ["/O2"] if sys.platform == "win32" else ["-O3", "-Wall"]
+extra_compile_args = ["/O2"] if sys.platform == "win32" else ["-std=c11", "-O3", "-Wall"]
 extra_link_args = []
 include_dirs = ["src"]
 library_dirs = []
@@ -28,7 +28,7 @@ def _pkg_config_paths(option, prefix):
     return [arg.removeprefix(prefix) for arg in shlex.split(output) if arg.startswith(prefix)]
 
 if coverage_enabled and sys.platform != "win32":
-    extra_compile_args = ["-O0", "-g", "--coverage", "-Wall"]
+    extra_compile_args = ["-std=c11", "-O0", "-g", "--coverage", "-Wall"]
     extra_link_args = ["--coverage"]
 
 include_dirs.extend(_pkg_config_paths("--cflags-only-I", "-I"))
@@ -59,7 +59,10 @@ fnvcrack_extension = Extension(
     include_dirs=include_dirs,
     library_dirs=library_dirs,
     libraries=["flint", "gmp", "mpfr"],
-    define_macros=[("FNVCRACK_PYTHON_EXTENSION", "1")],
+    define_macros=[
+        ("FNVCRACK_PYTHON_EXTENSION", "1"),
+        ("_POSIX_C_SOURCE", "200809L"),
+    ],
     extra_compile_args=extra_compile_args,
     extra_link_args=extra_link_args,
 )

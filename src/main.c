@@ -1,4 +1,5 @@
 #include <stdio.h>
+#include <stdlib.h>
 #include <time.h>
 
 #include <flint/fmpz.h>
@@ -7,6 +8,7 @@
 #include "inverse.h"
 #include "fnv.h"
 #include "crack.h"
+#include "interrupt.h"
 
 static inline uint64_t get_time_ns() {
     struct timespec ts;
@@ -126,9 +128,11 @@ void run_64_bit_unk() {
     destroy_crack_ctx(ctx);
 }
 
-int main() {
-    fnvcrack_clear_interrupt();
-    fnvcrack_install_interrupt_handler();
+int main(void) {
+    if (fnvcrack_install_interrupt_handler() != 0) {
+        perror("Failed to install interrupt handler");
+        return EXIT_FAILURE;
+    }
 
     run_64_bit_crack();
     if (!fnvcrack_interrupted()) {
@@ -138,6 +142,9 @@ int main() {
         run_64_bit_unk();
     }
 
-    fnvcrack_restore_interrupt_handler();
-    return fnvcrack_interrupted() ? 130 : 0;
+    if (fnvcrack_restore_interrupt_handler() != 0) {
+        perror("Failed to restore interrupt handler");
+        return EXIT_FAILURE;
+    }
+    return fnvcrack_interrupted() ? 130 : EXIT_SUCCESS;
 }

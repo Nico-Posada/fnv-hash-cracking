@@ -5,6 +5,7 @@
 #include <flint/fmpz_mat.h>
 
 #include "crack.h"
+#include "interrupt.h"
 #include "inverse.h"
 #include "enumerate.h"
 #include "fnv.h"

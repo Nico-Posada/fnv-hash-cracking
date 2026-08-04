@@ -1,5 +1,4 @@
 #pragma once
-#include <stdbool.h>
 #include <stdint.h>
 
 #include <flint/fmpz.h>
@@ -79,8 +78,3 @@ CrackResult crack_u64_with_len(context_t ctx, uint64_t target, char_buffer* out_
 CrackResult crack_fmpz_with_len(context_t ctx, fmpz_t target, char_buffer* out_buffer, uint32_t expected_len);
 CrackResult crack_u64(context_t ctx, const uint64_t target, char_buffer* out_buffer, const uint32_t max_search_len);
 CrackResult crack_fmpz(context_t ctx, fmpz_t target, char_buffer* out_buffer, const uint32_t max_search_len);
-
-void fnvcrack_clear_interrupt(void);
-bool fnvcrack_interrupted(void);
-int fnvcrack_install_interrupt_handler(void);
-int fnvcrack_restore_interrupt_handler(void);

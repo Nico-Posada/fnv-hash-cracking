@@ -91,9 +91,12 @@ class CrackContext:
         :param max_enum_candidates: Maximum enumeration candidates. ``0`` means unlimited.
         :param incremental: Search all unknown lengths from 1 through ``crack_len``.
         :returns: The crack status and value, if one was found.
+        A custom ``SIGINT`` handler that returns normally produces
+        ``CrackResult(status=CrackStatus.INTERRUPTED, value=None)``.
         :raises TypeError: If arguments have invalid types.
         :raises ValueError: If integer arguments are negative.
         :raises OverflowError: If integer arguments do not fit native limits.
+        :raises KeyboardInterrupt: If ``SIGINT`` is received while Python's default handler is active.
         """
         status, value = self._native.crack(
             target,
