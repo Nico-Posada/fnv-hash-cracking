@@ -39,7 +39,7 @@ inline static PyObject* _fmpz_to_pylong(const fmpz* num) {
 
     PyObject* result = PyLong_FromString(ret_str, NULL, 16);
     if (output_buf == NULL) {
-        free(ret_str);
+        flint_free(ret_str);
     }
 
     return result;

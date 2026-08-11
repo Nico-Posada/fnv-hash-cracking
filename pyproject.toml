@@ -40,10 +40,15 @@ replace = '''name = "fnvcrack"
 version = "{new_version}"'''
 
 [tool.cibuildwheel]
-build = "cp{311,312,313,314}-{manylinux_x86_64,macosx_x86_64,macosx_arm64}"
+build = "cp{311,312,313,314}-{manylinux_x86_64,macosx_x86_64,macosx_arm64,win_amd64}"
 build-frontend = "build[uv]"
 test-requires = ["exrex", "pytest", "pytest-cov"]
 test-command = "python -m pytest {project}/tests"
+
+[tool.cibuildwheel.windows]
+archs = ["AMD64"]
+before-build = "pip install delvewheel"
+repair-wheel-command = 'delvewheel repair --add-path "%FNVCRACK_DEPS%/bin" -w {dest_dir} {wheel}'
 
 [tool.cibuildwheel.macos]
 before-all = "brew install flint pkgconf"

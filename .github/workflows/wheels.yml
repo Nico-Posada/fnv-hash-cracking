@@ -69,6 +69,34 @@ jobs:
           name: fnvcrack-manylinux-wheels
           path: wheelhouse/*.whl
 
+  build-windows-wheels:
+    name: Windows AMD64 wheels
+    runs-on: windows-latest
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Install native dependencies
+        shell: pwsh
+        run: |
+          & "$env:VCPKG_INSTALLATION_ROOT\vcpkg.exe" install flint:x64-windows
+          $deps = Join-Path $env:VCPKG_INSTALLATION_ROOT "installed\x64-windows"
+          "FNVCRACK_DEPS=$deps" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+
+      - name: Build wheels
+        uses: pypa/cibuildwheel@v3.4.1
+        with:
+          extras: uv
+          output-dir: wheelhouse
+
+      - name: Upload release artifacts
+        if: github.event_name == 'release' || startsWith(github.ref, 'refs/tags/')
+        uses: actions/upload-artifact@v4
+        with:
+          name: fnvcrack-windows-amd64-wheels
+          path: wheelhouse/*.whl
+
   build-macos-wheels:
     name: macOS ${{ matrix.arch }} wheels
     runs-on: ${{ matrix.runner }}
@@ -140,6 +168,7 @@ jobs:
       - test
       - build-linux-wheels
       - build-macos-wheels
+      - build-windows-wheels
       - build-sdist
     runs-on: ubuntu-latest
     permissions:

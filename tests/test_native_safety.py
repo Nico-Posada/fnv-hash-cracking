@@ -1,4 +1,3 @@
-import resource
 import sys
 import unittest
 from contextlib import contextmanager
@@ -6,7 +5,7 @@ from contextlib import contextmanager
 from fnvcrack import CrackContext
 
 
-def _current_address_space():
+def _current_address_space(resource):
     with open("/proc/self/statm") as f:
         pages = int(f.read().split()[0])
     return pages * resource.getpagesize()
@@ -16,9 +15,10 @@ def _current_address_space():
 def _limited_address_space(extra_bytes):
     if sys.platform != "linux":
         raise unittest.SkipTest("requires Linux /proc and RLIMIT_AS semantics")
+    import resource
 
     old_limit = resource.getrlimit(resource.RLIMIT_AS)
-    soft = _current_address_space() + extra_bytes
+    soft = _current_address_space(resource) + extra_bytes
     hard = old_limit[1]
     if hard != resource.RLIM_INFINITY:
         soft = min(soft, hard)

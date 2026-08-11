@@ -292,7 +292,7 @@ class BenchmarkCliTestCase(unittest.TestCase):
         with mock.patch.object(bench, "run_py_spy", fake_run_py_spy):
             result = bench.run_speedscope(args)
 
-        self.assertEqual(result["profiler"]["svg_out"], "/tmp/ignored.svg")
+        self.assertEqual(result["profiler"]["svg_out"], str(Path("/tmp/ignored.svg")))
         self.assertEqual(result["profiler"]["svg_error"], "No child process")
         self.assertEqual(result["profiler"]["top_self_functions"][0]["name"], "native_work")
 

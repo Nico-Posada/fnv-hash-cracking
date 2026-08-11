@@ -1,9 +1,9 @@
 import os
-import select
 import signal
 import subprocess
 import sys
 import textwrap
+import threading
 import unittest
 
 from conftest import run_python
@@ -14,6 +14,10 @@ class InterruptHandlingTestCase(unittest.TestCase):
         code = """
             import sys
             import threading
+            if sys.platform == "win32":
+                import ctypes
+
+                assert ctypes.windll.kernel32.SetConsoleCtrlHandler(None, False)
 
             from fnvcrack import CrackContext
 
@@ -49,22 +53,57 @@ class InterruptHandlingTestCase(unittest.TestCase):
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
             text=True,
+            creationflags=(
+                subprocess.CREATE_NEW_PROCESS_GROUP if sys.platform == "win32" else 0
+            ),
         )
         assert proc.stdout is not None
-        ready, _, _ = select.select([proc.stdout], [], [], 10)
-        if not ready:
-            proc.kill()
-            stdout, stderr = proc.communicate()
-            self.fail(f"subprocess did not become ready\nstdout={stdout}\nstderr={stderr}")
-        self.assertEqual(proc.stdout.readline().strip(), "ready")
+        assert proc.stderr is not None
+        ready_line = []
+        stdout_tail = []
+        ready_event = threading.Event()
 
-        os.kill(proc.pid, signal.SIGINT)
-        try:
-            stdout, stderr = proc.communicate(timeout=10)
-        except subprocess.TimeoutExpired:
+        def read_stdout():
+            ready_line.append(proc.stdout.readline())
+            ready_event.set()
+            stdout_tail.append(proc.stdout.read())
+
+        reader = threading.Thread(target=read_stdout, daemon=True)
+        reader.start()
+        if not ready_event.wait(timeout=10):
             proc.kill()
-            stdout, stderr = proc.communicate()
-            self.fail(f"subprocess timed out\nstdout={stdout}\nstderr={stderr}")
+            proc.wait()
+            reader.join()
+            self.fail(
+                "subprocess did not become ready\n"
+                f"stdout={''.join(ready_line + stdout_tail)}\nstderr={proc.stderr.read()}"
+            )
+        self.assertEqual(ready_line[0].strip(), "ready")
+
+        previous_handler = None
+        try:
+            if sys.platform == "win32":
+                previous_handler = signal.signal(signal.SIGINT, signal.SIG_IGN)
+                proc.send_signal(signal.CTRL_C_EVENT)
+            else:
+                os.kill(proc.pid, signal.SIGINT)
+            try:
+                proc.wait(timeout=10)
+            except subprocess.TimeoutExpired:
+                proc.kill()
+                proc.wait()
+                reader.join()
+                self.fail(
+                    f"subprocess timed out\nstdout={''.join(stdout_tail)}"
+                    f"\nstderr={proc.stderr.read()}"
+                )
+        finally:
+            if previous_handler is not None:
+                signal.signal(signal.SIGINT, previous_handler)
+
+        reader.join()
+        stdout = "".join(stdout_tail)
+        stderr = proc.stderr.read()
 
         self.assertEqual(proc.returncode, 0, stderr)
         self.assertIn("python interrupt ok", stdout)
@@ -87,7 +126,10 @@ class InterruptHandlingTestCase(unittest.TestCase):
             def interrupt():
                 sender_ready.set()
                 with gate:
-                    os.kill(os.getpid(), signal.SIGINT)
+                    if sys.platform == "win32":
+                        signal.raise_signal(signal.SIGINT)
+                    else:
+                        os.kill(os.getpid(), signal.SIGINT)
 
             def fnv(data):
                 value = 0xcbf29ce484222325
@@ -144,7 +186,10 @@ class InterruptHandlingTestCase(unittest.TestCase):
             def interrupt():
                 sender_ready.set()
                 with gate:
-                    os.kill(os.getpid(), signal.SIGINT)
+                    if sys.platform == "win32":
+                        signal.raise_signal(signal.SIGINT)
+                    else:
+                        os.kill(os.getpid(), signal.SIGINT)
 
             signal.signal(signal.SIGINT, handler)
             ctx = CrackContext(valid_chars=b"abcdefghijklmnopqrstuvwxyz")
@@ -194,7 +239,10 @@ class InterruptHandlingTestCase(unittest.TestCase):
             def interrupt():
                 sender_ready.set()
                 with gate:
-                    os.kill(os.getpid(), signal.SIGINT)
+                    if sys.platform == "win32":
+                        signal.raise_signal(signal.SIGINT)
+                    else:
+                        os.kill(os.getpid(), signal.SIGINT)
 
             signal.signal(signal.SIGINT, handler)
             ctx = CrackContext(
@@ -262,7 +310,10 @@ class InterruptHandlingTestCase(unittest.TestCase):
 
             caught = False
             try:
-                os.kill(os.getpid(), signal.SIGINT)
+                if sys.platform == "win32":
+                    signal.raise_signal(signal.SIGINT)
+                else:
+                    os.kill(os.getpid(), signal.SIGINT)
             except KeyboardInterrupt:
                 caught = True
 

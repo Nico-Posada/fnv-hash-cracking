@@ -9,10 +9,13 @@ from setuptools.command.build_ext import build_ext
 
 
 coverage_enabled = os.environ.get("FNVCRACK_COVERAGE") == "1"
-extra_compile_args = ["/O2"] if sys.platform == "win32" else ["-std=c11", "-O3", "-Wall"]
+extra_compile_args = ["/std:c11", "/O2"] if sys.platform == "win32" else ["-std=c11", "-O3", "-Wall"]
 extra_link_args = []
 include_dirs = ["src"]
 library_dirs = []
+define_macros = [("FNVCRACK_PYTHON_EXTENSION", "1")]
+if sys.platform != "win32":
+    define_macros.append(("_POSIX_C_SOURCE", "200809L"))
 
 
 def _pkg_config_paths(option, prefix):
@@ -33,6 +36,10 @@ if coverage_enabled and sys.platform != "win32":
 
 include_dirs.extend(_pkg_config_paths("--cflags-only-I", "-I"))
 library_dirs.extend(_pkg_config_paths("--libs-only-L", "-L"))
+deps_prefix = os.environ.get("FNVCRACK_DEPS")
+if deps_prefix:
+    include_dirs.append(os.path.join(deps_prefix, "include"))
+    library_dirs.append(os.path.join(deps_prefix, "lib"))
 
 
 def _portable_compiler_args(args):
@@ -59,10 +66,7 @@ fnvcrack_extension = Extension(
     include_dirs=include_dirs,
     library_dirs=library_dirs,
     libraries=["flint", "gmp", "mpfr"],
-    define_macros=[
-        ("FNVCRACK_PYTHON_EXTENSION", "1"),
-        ("_POSIX_C_SOURCE", "200809L"),
-    ],
+    define_macros=define_macros,
     extra_compile_args=extra_compile_args,
     extra_link_args=extra_link_args,
 )

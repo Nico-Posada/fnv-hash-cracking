@@ -1,3 +1,5 @@
+#include <inttypes.h>
+#include <stdio.h>
 #include <stdlib.h>
 
 #include "context.h"
@@ -270,7 +272,7 @@ void print_context(context_t ctx) {
         fmpz_print(get_offset_basis_fmpz(ctx));
         printf("\n");
     } else {
-        printf("prime=0x%lx\noffset_basis=0x%lx\n", get_prime(ctx), get_offset_basis(ctx));
+        printf("prime=0x%" PRIx64 "\noffset_basis=0x%" PRIx64 "\n", get_prime(ctx), get_offset_basis(ctx));
     }
     printf("bits=%u\n", ctx->bits);
     printf("prefix=b\"");
