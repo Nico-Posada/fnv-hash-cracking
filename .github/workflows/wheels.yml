@@ -132,6 +132,7 @@ jobs:
       - name: Install native dependencies
         shell: pwsh
         run: |
+          New-Item -ItemType Directory -Force $env:VCPKG_DEFAULT_BINARY_CACHE | Out-Null
           $baseline = (Get-Content "$env:GITHUB_WORKSPACE\vcpkg.json" | ConvertFrom-Json).'builtin-baseline'
           git -C $env:VCPKG_INSTALLATION_ROOT fetch origin $baseline --depth=1
           & "$env:VCPKG_INSTALLATION_ROOT\vcpkg.exe" install `
