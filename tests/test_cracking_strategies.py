@@ -231,6 +231,21 @@ class CrackingStrategiesTestCase(CrackAssertionsMixin, unittest.TestCase):
         self.assertEqual(result.value, plaintext)
         self.assertCracked(result, target, ctx)
 
+    def test_wide_fmpz_enumerate_path(self):
+        plaintext = b"ab"
+        offset_basis = (1 << 255) + 0x12345
+        prime = (1 << 168) + 0x163
+        ctx = CrackContext(
+            offset_basis=offset_basis,
+            prime=prime,
+            bit_length=256,
+            valid_chars=LOWER,
+        )
+        target = fnv(plaintext, offset_basis, prime, 256)
+        result = ctx.crack(target, crack_len=2)
+        self.assertEqual(result.value, plaintext)
+        self.assertCracked(result, target, ctx)
+
     def test_fmpz_incremental_path(self):
         plaintext = b"abc"
         offset_basis = int("6c62272e07bb014262b821756295c58d", 16)

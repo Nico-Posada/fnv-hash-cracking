@@ -23,6 +23,23 @@ typedef struct {
     bool interrupted;
 } enum_search_t;
 
+typedef struct {
+    int64_t* basis;
+    int64_t* fit_min;
+    int64_t* fit_max;
+    int64_t* current;
+    enumerate_solution_cb cb;
+    void* cb_ctx;
+    int64_t* deltas;
+    uint32_t dim;
+    uint32_t width;
+    uint64_t max_candidates;
+    uint64_t candidates;
+    bool found;
+    bool hit_limit;
+    bool interrupted;
+} native_search_t;
+
 static void _mat_row_mul(fmpz_mat_t out, const fmpz_mat_t row, const fmpz_mat_t M) {
     const slong n = fmpz_mat_ncols(M);
     fmpz_t tmp;
@@ -237,6 +254,184 @@ static void _add_basis_row(enum_search_t* ctx, uint32_t row, int64_t scale) {
     }
 }
 
+static bool _native_can_still_fit(native_search_t* ctx, uint32_t depth) {
+    const size_t row = (size_t)depth * ctx->dim;
+    for (uint32_t j = 0; j < ctx->dim; ++j) {
+        if (ctx->current[j] < ctx->fit_min[row + j] ||
+            ctx->current[j] > ctx->fit_max[row + j]) {
+            return false;
+        }
+    }
+
+    return true;
+}
+
+static bool _native_emit_candidate(native_search_t* ctx) {
+    memcpy(ctx->deltas, ctx->current, (size_t)ctx->dim * sizeof(*ctx->deltas));
+
+    ++ctx->candidates;
+    if (ctx->cb(ctx->deltas, ctx->dim, ctx->cb_ctx)) {
+        ctx->found = true;
+        return true;
+    }
+
+    if (ctx->max_candidates != 0 && ctx->candidates >= ctx->max_candidates) {
+        ctx->hit_limit = true;
+        return true;
+    }
+
+    return false;
+}
+
+static void _native_add_basis_row(native_search_t* ctx, uint32_t row, int64_t scale) {
+    if (scale == 0) {
+        return;
+    }
+
+    const size_t start = (size_t)row * ctx->dim;
+    for (uint32_t j = 0; j < ctx->dim; ++j) {
+        ctx->current[j] += ctx->basis[start + j] * scale;
+    }
+}
+
+static void _native_search(native_search_t* ctx, uint32_t depth) {
+    if (ctx->found || ctx->hit_limit || ctx->interrupted) {
+        return;
+    }
+    if (fnvcrack_interrupted()) {
+        ctx->interrupted = true;
+        return;
+    }
+
+    const uint32_t next_depth = depth + 1;
+    int64_t prev_off = 0;
+    if (next_depth == ctx->dim) {
+        for (uint32_t i = 0; i < ctx->width; ++i) {
+            const int64_t off = _offset_for_index(i);
+            _native_add_basis_row(ctx, depth, off - prev_off);
+            prev_off = off;
+
+            if (fnvcrack_interrupted()) {
+                ctx->interrupted = true;
+            } else if (_native_can_still_fit(ctx, next_depth)) {
+                _native_emit_candidate(ctx);
+            }
+
+            if (ctx->found || ctx->hit_limit || ctx->interrupted) {
+                _native_add_basis_row(ctx, depth, -prev_off);
+                return;
+            }
+        }
+
+        _native_add_basis_row(ctx, depth, -prev_off);
+        return;
+    }
+
+    for (uint32_t i = 0; i < ctx->width; ++i) {
+        const int64_t off = _offset_for_index(i);
+        _native_add_basis_row(ctx, depth, off - prev_off);
+        prev_off = off;
+
+        if (_native_can_still_fit(ctx, next_depth)) {
+            _native_search(ctx, next_depth);
+        }
+
+        if (ctx->found || ctx->hit_limit || ctx->interrupted) {
+            _native_add_basis_row(ctx, depth, -prev_off);
+            return;
+        }
+    }
+
+    _native_add_basis_row(ctx, depth, -prev_off);
+}
+
+static bool _init_native_search(
+    native_search_t* ctx,
+    const fmpz_mat_t basis,
+    const fmpz_mat_t base,
+    const fmpz_mat_t tail_abs,
+    const fmpz_mat_t fit_min,
+    const fmpz_mat_t fit_max,
+    uint32_t enum_bound
+) {
+    const size_t n = ctx->dim;
+    if (n > SIZE_MAX / n ||
+        (n + 1) > SIZE_MAX / n ||
+        n * n > SIZE_MAX / sizeof(*ctx->basis) ||
+        (n + 1) * n > SIZE_MAX / sizeof(*ctx->fit_min)) {
+        return false;
+    }
+
+    int64_t* native_basis = malloc(n * n * sizeof(*native_basis));
+    int64_t* native_current = malloc(n * sizeof(*native_current));
+    int64_t* native_fit_min = malloc((n + 1) * n * sizeof(*native_fit_min));
+    int64_t* native_fit_max = malloc((n + 1) * n * sizeof(*native_fit_max));
+    if (!native_basis || !native_current || !native_fit_min || !native_fit_max) {
+        free(native_fit_max);
+        free(native_fit_min);
+        free(native_current);
+        free(native_basis);
+        return false;
+    }
+
+    bool fits = true;
+    fmpz_t reachable;
+    fmpz_init(reachable);
+    for (size_t j = 0; fits && j < n; ++j) {
+        fmpz_sub(reachable, fmpz_mat_entry(base, 0, j), fmpz_mat_entry(tail_abs, 0, j));
+        fits = fmpz_fits_si(reachable);
+        if (fits) {
+            fmpz_add(reachable, fmpz_mat_entry(base, 0, j), fmpz_mat_entry(tail_abs, 0, j));
+            fits = fmpz_fits_si(reachable);
+        }
+    }
+
+    for (size_t i = 0; fits && i < n; ++i) {
+        for (size_t j = 0; fits && j < n; ++j) {
+            const fmpz* value = fmpz_mat_entry(basis, i, j);
+            fits = fmpz_fits_si(value);
+            if (fits) {
+                fmpz_mul_ui(reachable, value, (uint64_t)enum_bound * 2);
+                fits = fmpz_fits_si(reachable);
+            }
+            if (fits) {
+                native_basis[i * n + j] = fmpz_get_si(value);
+            }
+        }
+    }
+
+    for (size_t i = 0; fits && i <= n; ++i) {
+        for (size_t j = 0; fits && j < n; ++j) {
+            const fmpz* min = fmpz_mat_entry(fit_min, i, j);
+            const fmpz* max = fmpz_mat_entry(fit_max, i, j);
+            fits = fmpz_fits_si(min) && fmpz_fits_si(max);
+            if (fits) {
+                native_fit_min[i * n + j] = fmpz_get_si(min);
+                native_fit_max[i * n + j] = fmpz_get_si(max);
+            }
+        }
+    }
+
+    if (fits) {
+        for (size_t j = 0; j < n; ++j) {
+            native_current[j] = fmpz_get_si(fmpz_mat_entry(base, 0, j));
+        }
+        ctx->basis = native_basis;
+        ctx->current = native_current;
+        ctx->fit_min = native_fit_min;
+        ctx->fit_max = native_fit_max;
+        ctx->width = enum_bound * 2 + 1;
+    } else {
+        free(native_fit_max);
+        free(native_fit_min);
+        free(native_current);
+        free(native_basis);
+    }
+
+    fmpz_clear(reachable);
+    return fits;
+}
+
 static void _search(enum_search_t* ctx, uint32_t depth) {
     if (ctx->found || ctx->hit_limit || ctx->interrupted) {
         return;
@@ -385,33 +580,61 @@ enumerate_solver_result enumerate_bounded_mod(
     _build_tail_abs(tail_abs, reduced, enum_bound);
     _build_fit_bounds(fit_min, fit_max, tail_abs, lower_bounds, upper_bounds);
 
-    enum_search_t search_ctx = {
-        .basis = reduced,
-        .fit_min = fit_min,
-        .fit_max = fit_max,
-        .current = base,
+    native_search_t native_ctx = {
         .cb = cb,
         .cb_ctx = cb_ctx,
         .deltas = deltas,
         .dim = (uint32_t)n,
-        .width = enum_bound * 2 + 1,
         .max_candidates = max_candidates,
-        .candidates = 0,
-        .found = false,
-        .hit_limit = false,
-        .interrupted = false,
     };
-    if (_can_still_fit(&search_ctx, 0)) {
-        _search(&search_ctx, 0);
-    }
+    if (_init_native_search(
+            &native_ctx,
+            reduced,
+            base,
+            tail_abs,
+            fit_min,
+            fit_max,
+            enum_bound
+        )) {
+        if (_native_can_still_fit(&native_ctx, 0)) {
+            _native_search(&native_ctx, 0);
+        }
 
-    result = ENUMERATE_SOLVER_DONE;
-    if (search_ctx.interrupted) {
-        result = ENUMERATE_SOLVER_INTERRUPTED;
-    } else if (search_ctx.found) {
-        result = ENUMERATE_SOLVER_FOUND;
-    } else if (search_ctx.hit_limit) {
-        result = ENUMERATE_SOLVER_LIMIT;
+        if (native_ctx.interrupted) {
+            result = ENUMERATE_SOLVER_INTERRUPTED;
+        } else if (native_ctx.found) {
+            result = ENUMERATE_SOLVER_FOUND;
+        } else if (native_ctx.hit_limit) {
+            result = ENUMERATE_SOLVER_LIMIT;
+        }
+        free(native_ctx.fit_max);
+        free(native_ctx.fit_min);
+        free(native_ctx.current);
+        free(native_ctx.basis);
+    } else {
+        enum_search_t search_ctx = {
+            .basis = reduced,
+            .fit_min = fit_min,
+            .fit_max = fit_max,
+            .current = base,
+            .cb = cb,
+            .cb_ctx = cb_ctx,
+            .deltas = deltas,
+            .dim = (uint32_t)n,
+            .width = enum_bound * 2 + 1,
+            .max_candidates = max_candidates,
+        };
+        if (_can_still_fit(&search_ctx, 0)) {
+            _search(&search_ctx, 0);
+        }
+
+        if (search_ctx.interrupted) {
+            result = ENUMERATE_SOLVER_INTERRUPTED;
+        } else if (search_ctx.found) {
+            result = ENUMERATE_SOLVER_FOUND;
+        } else if (search_ctx.hit_limit) {
+            result = ENUMERATE_SOLVER_LIMIT;
+        }
     }
 
 cleanup:
