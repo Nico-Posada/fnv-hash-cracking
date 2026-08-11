@@ -40,7 +40,7 @@ jobs:
           python-version: ${{ matrix.python-version }}
 
       - name: Set up uv
-        uses: astral-sh/setup-uv@v9
+        uses: astral-sh/setup-uv@v9.0.0
         with:
           enable-cache: true
           prune-cache: true
@@ -132,6 +132,8 @@ jobs:
       - name: Install native dependencies
         shell: pwsh
         run: |
+          $baseline = (Get-Content "$env:GITHUB_WORKSPACE\vcpkg.json" | ConvertFrom-Json).'builtin-baseline'
+          git -C $env:VCPKG_INSTALLATION_ROOT fetch origin $baseline --depth=1
           & "$env:VCPKG_INSTALLATION_ROOT\vcpkg.exe" install `
             "--triplet=x64-windows" `
             "--x-manifest-root=$env:GITHUB_WORKSPACE" `
@@ -202,7 +204,7 @@ jobs:
           python-version: "3.14"
 
       - name: Set up uv
-        uses: astral-sh/setup-uv@v9
+        uses: astral-sh/setup-uv@v9.0.0
         with:
           enable-cache: true
           prune-cache: true
@@ -242,7 +244,7 @@ jobs:
           merge-multiple: true
 
       - name: Set up uv
-        uses: astral-sh/setup-uv@v9
+        uses: astral-sh/setup-uv@v9.0.0
 
       - name: Publish to PyPI
         env:
