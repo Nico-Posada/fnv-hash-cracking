@@ -65,7 +65,7 @@ fnvcrack_extension = Extension(
     ],
     include_dirs=include_dirs,
     library_dirs=library_dirs,
-    libraries=["flint", "gmp", "mpfr"],
+    libraries=["flint"],
     define_macros=define_macros,
     extra_compile_args=extra_compile_args,
     extra_link_args=extra_link_args,

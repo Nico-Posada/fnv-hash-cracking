@@ -56,8 +56,39 @@ jobs:
       - name: Check out repository
         uses: actions/checkout@v4
 
+      - name: Resolve micromamba release
+        shell: bash
+        run: |
+          set -euo pipefail
+          version=2.9.0
+          basename="linux-64/micromamba-$version-0.tar.bz2"
+          curl -fsSL "https://api.anaconda.org/release/conda-forge/micromamba/$version" |
+            jq -er --arg basename "$basename" '
+              .distributions[]
+              | select(.basename == $basename)
+              | "MICROMAMBA_URL=https:\(.download_url)\nMICROMAMBA_SHA256=\(.sha256)"
+            ' >> "$GITHUB_ENV"
+
       - name: Build wheels
         uses: pypa/cibuildwheel@v3.4.1
+        env:
+          CIBW_ENVIRONMENT_PASS_LINUX: MICROMAMBA_URL MICROMAMBA_SHA256
+          CIBW_BEFORE_ALL_LINUX: |
+            set -eux
+            archive=/tmp/micromamba.tar.bz2
+            curl -fsSL "$MICROMAMBA_URL" -o "$archive"
+            printf '%s  %s\n' "$MICROMAMBA_SHA256" "$archive" | sha256sum --check -
+            tar -xjf "$archive" -C /tmp bin/micromamba
+            /tmp/bin/micromamba --no-rc create --yes \
+              --root-prefix /tmp/micromamba-root \
+              --prefix /opt/fnvcrack-deps \
+              --file {project}/manylinux.conda-lock.yml
+            test -f /opt/fnvcrack-deps/include/flint/flint.h
+            test -f /opt/fnvcrack-deps/lib/libflint.so
+            ldd_output="$(ldd /opt/fnvcrack-deps/lib/libflint.so)"
+            printf '%s\n' "$ldd_output"
+            ! printf '%s\n' "$ldd_output" | grep -q 'not found'
+            rm -rf "$archive" /tmp/bin /tmp/micromamba-root
         with:
           extras: uv
           output-dir: wheelhouse

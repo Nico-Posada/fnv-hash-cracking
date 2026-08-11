@@ -12,6 +12,15 @@ requires-python = ">=3.11"
 [dependency-groups]
 benchmark = ["exrex", "py-spy"]
 dev = ["exrex", "pytest", "pytest-cov"]
+wheel = ["conda-lock==4.0.2"]
+
+[tool.conda-lock]
+channels = ["conda-forge"]
+platforms = ["linux-64"]
+skip-non-conda-lock = true
+
+[tool.conda-lock.dependencies]
+libflint = "3.5.0=h983522c_0"
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
@@ -56,8 +65,8 @@ before-all = "brew install flint pkgconf"
 [tool.cibuildwheel.linux]
 archs = ["x86_64"]
 manylinux-x86_64-image = "manylinux_2_28"
-before-all = "bash {project}/scripts/build-manylinux-deps.sh"
-repair-wheel-command = "auditwheel repair --plat manylinux_2_28_x86_64 --lib-sdir .libs -w {dest_dir} {wheel}"
+repair-wheel-command = "auditwheel repair --strip --plat manylinux_2_28_x86_64 --lib-sdir .libs -w {dest_dir} {wheel}"
+test-environment = { LD_LIBRARY_PATH = "" }
 
 [tool.cibuildwheel.linux.environment]
 FNVCRACK_DEPS = "/opt/fnvcrack-deps"
