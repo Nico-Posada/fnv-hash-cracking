@@ -12,6 +12,10 @@ on:
       - published
   workflow_dispatch:
 
+concurrency:
+  group: wheels-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
 jobs:
   test:
     name: Python ${{ matrix.python-version }}
@@ -28,17 +32,18 @@ jobs:
 
     steps:
       - name: Check out repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Set up Python
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@v7
         with:
           python-version: ${{ matrix.python-version }}
 
       - name: Set up uv
-        uses: astral-sh/setup-uv@v5
+        uses: astral-sh/setup-uv@v9
         with:
           enable-cache: true
+          prune-cache: true
 
       - name: Install native dependencies
         run: |
@@ -54,7 +59,7 @@ jobs:
 
     steps:
       - name: Check out repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Resolve micromamba release
         shell: bash
@@ -103,15 +108,34 @@ jobs:
   build-windows-wheels:
     name: Windows AMD64 wheels
     runs-on: windows-latest
+    env:
+      VCPKG_DEFAULT_BINARY_CACHE: ${{ github.workspace }}\.vcpkg-cache
 
     steps:
       - name: Check out repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
+
+      - name: Set vcpkg cache key
+        shell: pwsh
+        run: |
+          "VCPKG_CACHE_IMAGE=$env:ImageOS-$env:ImageVersion" |
+            Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+
+      - name: Cache vcpkg binaries
+        uses: actions/cache@v6
+        with:
+          path: .vcpkg-cache
+          key: vcpkg-${{ runner.os }}-${{ runner.arch }}-${{ env.VCPKG_CACHE_IMAGE }}-${{ hashFiles('vcpkg.json') }}
+          restore-keys: |
+            vcpkg-${{ runner.os }}-${{ runner.arch }}-
 
       - name: Install native dependencies
         shell: pwsh
         run: |
-          & "$env:VCPKG_INSTALLATION_ROOT\vcpkg.exe" install flint:x64-windows
+          & "$env:VCPKG_INSTALLATION_ROOT\vcpkg.exe" install `
+            "--triplet=x64-windows" `
+            "--x-manifest-root=$env:GITHUB_WORKSPACE" `
+            "--x-install-root=$env:VCPKG_INSTALLATION_ROOT\installed"
           $deps = Join-Path $env:VCPKG_INSTALLATION_ROOT "installed\x64-windows"
           "FNVCRACK_DEPS=$deps" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
 
@@ -149,7 +173,7 @@ jobs:
 
     steps:
       - name: Check out repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Build wheels
         uses: pypa/cibuildwheel@v3.4.1
@@ -170,17 +194,18 @@ jobs:
 
     steps:
       - name: Check out repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Set up Python
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@v7
         with:
           python-version: "3.14"
 
       - name: Set up uv
-        uses: astral-sh/setup-uv@v5
+        uses: astral-sh/setup-uv@v9
         with:
           enable-cache: true
+          prune-cache: true
 
       - name: Build source distribution
         run: uv build --sdist --out-dir dist --no-sources
@@ -217,7 +242,7 @@ jobs:
           merge-multiple: true
 
       - name: Set up uv
-        uses: astral-sh/setup-uv@v5
+        uses: astral-sh/setup-uv@v9
 
       - name: Publish to PyPI
         env:

@@ -27,6 +27,7 @@ testpaths = ["tests"]
 python_files = ["test_*.py"]
 python_classes = ["*TestCase"]
 addopts = [
+    "-ra",
     "--cov=fnvcrack",
     "--cov-report=term-missing",
     "--cov-fail-under=100",

@@ -6,6 +6,7 @@ wheelhouse*/
 ext/
 .pytest_cache/
 .coverage
+.vcpkg-cache/
 .venv/
 *.o
 *.so
