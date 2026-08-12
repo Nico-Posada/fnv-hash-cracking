@@ -599,7 +599,7 @@ enumerate_solver_result enumerate_bounded_mod(
         .dim = (uint32_t)n,
         .max_candidates = max_candidates,
     };
-    if (_init_native_search(
+    if (n >= 8 && _init_native_search(
             &native_ctx,
             reduced,
             base,
