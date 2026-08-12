@@ -6,11 +6,16 @@ from fnvcrack import (
     FNV64_OFFSET_BASIS,
     FNV64_PRIME,
 )
+from fnvcrack._fnvcrack import NativeContext
 
 from conftest import FULL_BYTES, LOWER
 
 
 class ContextApiTestCase(unittest.TestCase):
+    def test_native_context_subclass(self):
+        self.assertTrue(issubclass(CrackContext, NativeContext))
+        self.assertFalse(hasattr(CrackContext(), "_native"))
+
     def test_imports_and_defaults(self):
         ctx = CrackContext()
         self.assertEqual(ctx.offset_basis, FNV64_OFFSET_BASIS)

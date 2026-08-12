@@ -1,6 +1,7 @@
 import unittest
 
 from fnvcrack import CrackContext, CrackResult, CrackStatus
+from fnvcrack._fnvcrack import NativeContext
 
 
 class ValidationTestCase(unittest.TestCase):
@@ -90,24 +91,24 @@ class ValidationTestCase(unittest.TestCase):
     def test_native_method_requires_all_internal_arguments(self):
         ctx = CrackContext()
         with self.assertRaises(TypeError):
-            ctx._native.crack(0, 8)
+            NativeContext.crack(ctx, 0, 8)
 
         with self.assertRaises(TypeError):
-            ctx._native.crack(0, 8, 4, 0, False, 0)
+            NativeContext.crack(ctx, 0, 8, 4, 0, False, 0)
 
     def test_native_method_validates_target_range(self):
         small_ctx = CrackContext(bit_length=8, offset_basis=0, prime=1)
         with self.assertRaisesRegex(OverflowError, "target"):
-            small_ctx._native.crack(256, 1, 4, 0, False)
+            NativeContext.crack(small_ctx, 256, 1, 4, 0, False)
 
         fmpz_ctx = CrackContext(bit_length=128)
         with self.assertRaisesRegex(ValueError, "target"):
-            fmpz_ctx._native.crack(-1, 1, 4, 0, False)
+            NativeContext.crack(fmpz_ctx, -1, 1, 4, 0, False)
 
         with self.assertRaisesRegex(OverflowError, "target"):
-            fmpz_ctx._native.crack(2**128, 1, 4, 0, False)
+            NativeContext.crack(fmpz_ctx, 2**128, 1, 4, 0, False)
 
     def test_native_method_rejects_total_length_overflow(self):
         ctx = CrackContext(prefix=b"x")
         with self.assertRaisesRegex(OverflowError, "crack_len"):
-            ctx._native.crack(0, 2**32 - 1, 4, 0, False)
+            NativeContext.crack(ctx, 0, 2**32 - 1, 4, 0, False)

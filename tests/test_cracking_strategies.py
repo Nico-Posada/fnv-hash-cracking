@@ -115,6 +115,23 @@ class CrackingStrategiesTestCase(CrackAssertionsMixin, unittest.TestCase):
         result = ctx.crack(target, crack_len=8, incremental=True)
         self.assertEqual(result.value, plaintext)
 
+    def test_batch_crack(self):
+        ctx = CrackContext(prefix=b"pre", suffix=b"suf", valid_chars=b"ab")
+        targets = (
+            target
+            for target in (
+                fnv(b"preasuf"),
+                0,
+                fnv(b"prebbsuf"),
+            )
+        )
+
+        self.assertEqual(
+            ctx.batch_crack(targets, crack_len=2, incremental=True),
+            [b"preasuf", None, b"prebbsuf"],
+        )
+        self.assertEqual(ctx.batch_crack([], crack_len=2), [])
+
     def test_prefix_suffix_crack_len_is_unknown_length(self):
         plaintext = b"preabcsuf"
         target = fnv(plaintext)
