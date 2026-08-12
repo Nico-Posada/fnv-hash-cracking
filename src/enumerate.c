@@ -361,9 +361,8 @@ static bool _init_native_search(
     native_search_t* ctx,
     const fmpz_mat_t basis,
     const fmpz_mat_t base,
-    const fmpz_mat_t tail_abs,
-    const fmpz_mat_t fit_min,
-    const fmpz_mat_t fit_max,
+    const int64_t* lower_bounds,
+    const int64_t* upper_bounds,
     uint32_t enum_bound
 ) {
     const size_t n = ctx->dim;
@@ -387,17 +386,6 @@ static bool _init_native_search(
     }
 
     bool fits = true;
-    fmpz_t reachable;
-    fmpz_init(reachable);
-    for (size_t j = 0; fits && j < n; ++j) {
-        fmpz_sub(reachable, fmpz_mat_entry(base, 0, j), fmpz_mat_entry(tail_abs, 0, j));
-        fits = fmpz_fits_si(reachable);
-        if (fits) {
-            fmpz_add(reachable, fmpz_mat_entry(base, 0, j), fmpz_mat_entry(tail_abs, 0, j));
-            fits = fmpz_fits_si(reachable);
-        }
-    }
-
     for (size_t i = 0; fits && i < n; ++i) {
         for (size_t j = 0; fits && j < n; ++j) {
             const fmpz* value = fmpz_mat_entry(basis, i, j);
@@ -412,22 +400,49 @@ static bool _init_native_search(
         }
     }
 
-    for (size_t i = 0; fits && i <= n; ++i) {
-        for (size_t j = 0; fits && j < n; ++j) {
-            const fmpz* min = fmpz_mat_entry(fit_min, i, j);
-            const fmpz* max = fmpz_mat_entry(fit_max, i, j);
-            fits = fmpz_fits_si(min) && fmpz_fits_si(max);
-            if (fits) {
-                native_fit_min[i * n + j] = fmpz_get_si(min);
-                native_fit_max[i * n + j] = fmpz_get_si(max);
+    for (size_t j = 0; fits && j < n; ++j) {
+        const fmpz* value = fmpz_mat_entry(base, 0, j);
+        fits = fmpz_fits_si(value);
+        if (fits) {
+            native_current[j] = fmpz_get_si(value);
+            native_fit_min[n * n + j] = lower_bounds[j];
+            native_fit_max[n * n + j] = upper_bounds[j];
+        }
+    }
+
+    for (size_t j = 0; fits && j < n; ++j) {
+        uint64_t tail = 0;
+        for (size_t i = n; i-- > 0;) {
+            const int64_t value = native_basis[i * n + j];
+            const uint64_t magnitude = value < 0
+                ? (uint64_t)(-(value + 1)) + 1
+                : (uint64_t)value;
+            if (magnitude != 0 && enum_bound > UINT64_MAX / magnitude) {
+                fits = false;
+                break;
             }
+            const uint64_t scaled = magnitude * enum_bound;
+            if (tail > (uint64_t)INT64_MAX - scaled) {
+                fits = false;
+                break;
+            }
+            tail += scaled;
+            if (lower_bounds[j] < INT64_MIN + (int64_t)tail ||
+                upper_bounds[j] > INT64_MAX - (int64_t)tail) {
+                fits = false;
+                break;
+            }
+            native_fit_min[i * n + j] = lower_bounds[j] - (int64_t)tail;
+            native_fit_max[i * n + j] = upper_bounds[j] + (int64_t)tail;
+        }
+        if (fits &&
+            (native_current[j] < INT64_MIN + (int64_t)tail ||
+             native_current[j] > INT64_MAX - (int64_t)tail)) {
+            fits = false;
         }
     }
 
     if (fits) {
-        for (size_t j = 0; j < n; ++j) {
-            native_current[j] = fmpz_get_si(fmpz_mat_entry(base, 0, j));
-        }
         ctx->basis = native_basis;
         ctx->current = native_current;
         ctx->fit_min = native_fit_min;
@@ -440,7 +455,6 @@ static bool _init_native_search(
         free(native_basis);
     }
 
-    fmpz_clear(reachable);
     return fits;
 }
 
@@ -589,8 +603,6 @@ enumerate_solver_result enumerate_bounded_mod(
     }
 
     _sort_rows_desc(reduced);
-    _build_tail_abs(tail_abs, reduced, enum_bound);
-    _build_fit_bounds(fit_min, fit_max, tail_abs, lower_bounds, upper_bounds);
 
     native_search_t native_ctx = {
         .cb = cb,
@@ -603,9 +615,8 @@ enumerate_solver_result enumerate_bounded_mod(
             &native_ctx,
             reduced,
             base,
-            tail_abs,
-            fit_min,
-            fit_max,
+            lower_bounds,
+            upper_bounds,
             enum_bound
         )) {
         if (_native_can_still_fit(&native_ctx, 0)) {
@@ -624,6 +635,8 @@ enumerate_solver_result enumerate_bounded_mod(
         free(native_ctx.current);
         free(native_ctx.basis);
     } else {
+        _build_tail_abs(tail_abs, reduced, enum_bound);
+        _build_fit_bounds(fit_min, fit_max, tail_abs, lower_bounds, upper_bounds);
         enum_search_t search_ctx = {
             .basis = reduced,
             .fit_min = fit_min,
