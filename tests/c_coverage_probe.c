@@ -10,6 +10,7 @@
 
 #include "context.h"
 #include "crack.h"
+#include "enumerate.h"
 #include "fnv.h"
 #include "interrupt.h"
 #include "inverse.h"
@@ -253,6 +254,15 @@ static void check_crack_api(void) {
     fmpz_clear(offset);
 }
 
+static void check_native_transition_bounds(void) {
+    const int64_t edge = INT64_C(1) << 62;
+    assert(!enumerate_native_transition_fits_internal(edge, 1));
+    assert(!enumerate_native_transition_fits_internal(-edge, 1));
+    assert(enumerate_native_transition_fits_internal(edge - 1, 1));
+    assert(!enumerate_native_transition_fits_internal(INT64_MIN, 1));
+    assert(enumerate_native_transition_fits_internal(INT64_MIN, 0));
+}
+
 static void check_result_malloc_failure(void) {
     const size_t prefix_len = 8 * 1024 * 1024;
     char* prefix = malloc(prefix_len);
@@ -289,6 +299,7 @@ int main(void) {
     check_fnv_api();
     check_context_api();
     check_crack_api();
+    check_native_transition_bounds();
     check_result_malloc_failure();
     return 0;
 }

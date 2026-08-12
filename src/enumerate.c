@@ -225,6 +225,18 @@ static bool _emit_candidate(enum_search_t* ctx) {
     return false;
 }
 
+bool enumerate_native_transition_fits_internal(int64_t value, uint32_t enum_bound) {
+    if (enum_bound == 0) {
+        return true;
+    }
+
+    const uint64_t magnitude = value < 0
+        ? UINT64_C(0) - (uint64_t)value
+        : (uint64_t)value;
+    const uint64_t scale = (uint64_t)enum_bound * 2;
+    return magnitude <= (uint64_t)INT64_MAX / scale;
+}
+
 static int64_t _offset_for_index(uint32_t idx) {
     if (idx == 0) {
         return 0;
@@ -391,11 +403,11 @@ static bool _init_native_search(
             const fmpz* value = fmpz_mat_entry(basis, i, j);
             fits = fmpz_fits_si(value);
             if (fits) {
-                fmpz_mul_ui(reachable, value, (uint64_t)enum_bound * 2);
-                fits = fmpz_fits_si(reachable);
-            }
-            if (fits) {
-                native_basis[i * n + j] = fmpz_get_si(value);
+                const int64_t native_value = fmpz_get_si(value);
+                fits = enumerate_native_transition_fits_internal(native_value, enum_bound);
+                if (fits) {
+                    native_basis[i * n + j] = native_value;
+                }
             }
         }
     }
