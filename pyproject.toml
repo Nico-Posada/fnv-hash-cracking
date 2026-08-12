@@ -12,7 +12,6 @@ requires-python = ">=3.11"
 [dependency-groups]
 benchmark = ["exrex", "py-spy"]
 dev = ["exrex", "pytest", "pytest-cov"]
-wheel = ["conda-lock==4.0.2"]
 
 [tool.conda-lock]
 channels = ["conda-forge"]
