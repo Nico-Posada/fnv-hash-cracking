@@ -16,8 +16,6 @@ typedef enum {
     ENUMERATE_SOLVER_LIMIT = 2,
 } enumerate_solver_result;
 
-bool enumerate_native_transition_fits_internal(int64_t value, uint32_t enum_bound);
-
 enumerate_solver_result enumerate_bounded_mod(
     const fmpz_mat_t coeffs,
     const fmpz_t rhs,

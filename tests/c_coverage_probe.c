@@ -11,6 +11,7 @@
 #include "context.h"
 #include "crack.h"
 #include "enumerate.h"
+#include "enumerate_native.h"
 #include "fnv.h"
 #include "interrupt.h"
 #include "inverse.h"
@@ -263,6 +264,58 @@ static void check_native_transition_bounds(void) {
     assert(enumerate_native_transition_fits_internal(INT64_MIN, 0));
 }
 
+static bool count_candidate(const int64_t* deltas, uint32_t delta_len, void* userdata) {
+    (void)deltas;
+    (void)delta_len;
+    ++*(uint64_t*)userdata;
+    return false;
+}
+
+static void check_enum_bound_width(void) {
+    enum { DIM = 8 };
+    fmpz_mat_t basis, base;
+    fmpz_mat_init(basis, DIM, DIM);
+    fmpz_mat_one(basis);
+    fmpz_mat_init(base, 1, DIM);
+
+    int64_t lower_bounds[DIM];
+    int64_t upper_bounds[DIM];
+    for (uint32_t i = 0; i < DIM; ++i) {
+        lower_bounds[i] = -1;
+        upper_bounds[i] = 1;
+    }
+
+    uint64_t candidates = 0;
+    enumerate_solver_result result;
+    assert(enumerate_native_try(
+        basis, base, lower_bounds, upper_bounds, DIM, UINT32_C(1) << 31, 2, count_candidate, &candidates, &result
+    ));
+    assert(result == ENUMERATE_SOLVER_LIMIT);
+    assert(candidates == 2);
+
+    fmpz_mat_clear(base);
+    fmpz_mat_clear(basis);
+
+    fmpz_mat_t coeffs;
+    fmpz_mat_init(coeffs, 1, 1);
+    fmpz_one(fmpz_mat_entry(coeffs, 0, 0));
+    fmpz_t rhs, modulus;
+    fmpz_init(rhs);
+    fmpz_init_set_ui(modulus, 5);
+    const int64_t lower_bound = -5;
+    const int64_t upper_bound = 5;
+    candidates = 0;
+    assert(
+        enumerate_bounded_mod(
+            coeffs, rhs, modulus, &lower_bound, &upper_bound, UINT32_C(1) << 31, 2, count_candidate, &candidates
+        ) == ENUMERATE_SOLVER_LIMIT
+    );
+    assert(candidates == 2);
+    fmpz_clear(modulus);
+    fmpz_clear(rhs);
+    fmpz_mat_clear(coeffs);
+}
+
 static void check_result_malloc_failure(void) {
     const size_t prefix_len = 8 * 1024 * 1024;
     char* prefix = malloc(prefix_len);
@@ -301,5 +354,6 @@ int main(void) {
     check_crack_api();
     check_native_transition_bounds();
     check_result_malloc_failure();
+    check_enum_bound_width();
     return 0;
 }
