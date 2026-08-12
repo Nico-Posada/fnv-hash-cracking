@@ -349,10 +349,16 @@ static bool _init_native_search(
     const int64_t* upper_bounds,
     uint32_t enum_bound
 ) {
-    const size_t n = ctx->dim;
+    if ((uintmax_t)ctx->dim > (uintmax_t)SIZE_MAX) {
+        return false;
+    }
+    const size_t n = (size_t)ctx->dim;
+    const size_t max_items = SIZE_MAX / sizeof(*ctx->basis);
+    if (n > max_items / n || n == SIZE_MAX || n + 1 > max_items / n) {
+        return false;
+    }
     const size_t matrix_size = n * n;
     const size_t bounds_size = (n + 1) * n;
-    const size_t max_items = SIZE_MAX / sizeof(*ctx->basis);
     if (matrix_size > max_items - n ||
         bounds_size > (max_items - matrix_size - n) / 2) {
         return false;
