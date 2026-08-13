@@ -1,4 +1,4 @@
-from collections.abc import Iterable
+from collections.abc import Callable, Iterable
 from multiprocessing import Pool
 
 from . import _fnvcrack
@@ -51,6 +51,7 @@ class CrackContext(_fnvcrack.NativeContext):
         enum_bound: int = DEFAULT_ENUM_BOUND,
         max_enum_candidates: int = DEFAULT_MAX_ENUM_CANDIDATES,
         incremental: bool = False,
+        callback: Callable[[bytes], bool] | None = None,
     ) -> CrackResult:
         """Try to find an input whose FNV-1a hash matches ``target``.
 
@@ -59,7 +60,9 @@ class CrackContext(_fnvcrack.NativeContext):
         :param enum_bound: Search radius around the lattice solution.
         :param max_enum_candidates: Maximum enumeration candidates. ``0`` means unlimited.
         :param incremental: Search all unknown lengths from 1 through ``crack_len``.
-        :returns: The crack status and value, if one was found.
+        :param callback: Receives each verified candidate. A truthy return accepts it; falsey continues searching.
+        :returns: The crack status and accepted value, if any. With ``callback=None``, the first verified match is
+            accepted. If a callback rejects every candidate, the result is ``FAILED`` with no value.
         A custom ``SIGINT`` handler that returns normally produces
         ``CrackResult(status=CrackStatus.INTERRUPTED, value=None)``.
         :raises TypeError: If arguments have invalid types.
@@ -73,6 +76,7 @@ class CrackContext(_fnvcrack.NativeContext):
             enum_bound,
             max_enum_candidates,
             incremental,
+            callback,
         )
         return CrackResult(status=status, value=value)
 

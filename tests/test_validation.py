@@ -44,6 +44,30 @@ class ValidationTestCase(unittest.TestCase):
         with self.assertRaisesRegex(TypeError, "incremental"):
             ctx.crack(0, crack_len=8, incremental=0)
 
+        with self.assertRaisesRegex(TypeError, "^callback must be callable or None$"):
+            ctx.crack(0, crack_len=8, callback=0)
+
+    def test_callback_exception_propagates_unchanged(self):
+        class SentinelError(Exception):
+            pass
+
+        sentinel = SentinelError("sentinel")
+        ctx = CrackContext(offset_basis=0, prime=1, bit_length=8, prefix=b"\x00")
+
+        def fail(_candidate):
+            raise sentinel
+
+        with self.assertRaises(SentinelError) as caught:
+            ctx.crack(0, crack_len=0, callback=fail)
+        self.assertIs(caught.exception, sentinel)
+
+    def test_callback_uses_normal_truth_testing(self):
+        ctx = CrackContext(offset_basis=0, prime=1, bit_length=8, prefix=b"\x00")
+        result = ctx.crack(0, crack_len=0, callback=lambda _candidate: 1)
+
+        self.assertEqual(result.status, CrackStatus.SUCCESS)
+        self.assertEqual(result.value, b"\x00")
+
     def test_crack_argument_validation(self):
         ctx = CrackContext()
 
@@ -93,8 +117,17 @@ class ValidationTestCase(unittest.TestCase):
         with self.assertRaises(TypeError):
             NativeContext.crack(ctx, 0, 8)
 
+        self.assertEqual(
+            NativeContext.crack(ctx, 0, 0, 4, 0, False),
+            (CrackStatus.BAD_SEARCH_LENGTH, None),
+        )
+        self.assertEqual(
+            NativeContext.crack(ctx, 0, 0, 4, 0, False, None),
+            (CrackStatus.BAD_SEARCH_LENGTH, None),
+        )
+
         with self.assertRaises(TypeError):
-            NativeContext.crack(ctx, 0, 8, 4, 0, False, 0)
+            NativeContext.crack(ctx, 0, 8, 4, 0, False, None, 0)
 
     def test_native_method_validates_target_range(self):
         small_ctx = CrackContext(bit_length=8, offset_basis=0, prime=1)

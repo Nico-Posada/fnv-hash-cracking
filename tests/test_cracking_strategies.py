@@ -12,6 +12,12 @@ from conftest import (
     fnv,
 )
 
+COLLISION_VALUES = {b"ga", b"ic", b"jz", b"se"}
+
+
+def collision_context():
+    return CrackContext(offset_basis=0x25, prime=0xb3, bit_length=8, valid_chars=LOWER)
+
 
 class CrackingStrategiesTestCase(CrackAssertionsMixin, unittest.TestCase):
     def test_default_cracks_common_charsets(self):
@@ -218,6 +224,72 @@ class CrackingStrategiesTestCase(CrackAssertionsMixin, unittest.TestCase):
         result = ctx.crack(target, crack_len=2)
         self.assertCracked(result, target, ctx)
 
+    def test_callback_rejects_then_accepts_verified_candidate(self):
+        ctx = collision_context()
+        seen = []
+
+        def accept_second(candidate):
+            seen.append(candidate)
+            return len(seen) == 2
+
+        result = ctx.crack(0xa5, crack_len=2, enum_bound=255, callback=accept_second)
+
+        self.assertEqual(len(seen), 2)
+        self.assertNotEqual(seen[0], seen[1])
+        self.assertTrue(all(fnv(value, 0x25, 0xb3, 8) == 0xa5 for value in seen))
+        self.assertEqual(result.status, CrackStatus.SUCCESS)
+        self.assertEqual(result.value, seen[1])
+
+    def test_callback_can_collect_until_bounded_exhaustion(self):
+        ctx = collision_context()
+        seen = []
+
+        result = ctx.crack(
+            0xa5,
+            crack_len=2,
+            enum_bound=255,
+            callback=lambda candidate: seen.append(candidate) and False,
+        )
+
+        self.assertGreaterEqual(len(set(seen)), 2)
+        self.assertTrue(set(seen) <= COLLISION_VALUES)
+        self.assertEqual(result.status, CrackStatus.FAILED)
+        self.assertIsNone(result.value)
+
+    def test_callback_can_reject_only_known_candidate(self):
+        ctx = CrackContext(prefix=b"prefix", suffix=b"suffix")
+        seen = []
+
+        result = ctx.crack(
+            fnv(b"prefixsuffix"),
+            crack_len=0,
+            callback=lambda candidate: seen.append(candidate) and False,
+        )
+
+        self.assertEqual(seen, [b"prefixsuffix"])
+        self.assertEqual(result.status, CrackStatus.FAILED)
+        self.assertIsNone(result.value)
+
+    def test_callback_incremental_search_continues_after_rejection(self):
+        ctx = collision_context()
+        seen = []
+
+        def accept_length_two(candidate):
+            seen.append(candidate)
+            return len(candidate) == 2
+
+        result = ctx.crack(
+            0xa5,
+            crack_len=2,
+            enum_bound=255,
+            incremental=True,
+            callback=accept_length_two,
+        )
+
+        self.assertEqual(seen[0], b"b")
+        self.assertIn(result.value, COLLISION_VALUES)
+        self.assertEqual(result.status, CrackStatus.SUCCESS)
+
     def test_fmpz_default_path(self):
         plaintext = b"abcd"
         offset_basis = int("6c62272e07bb014262b821756295c58d", 16)
@@ -232,6 +304,28 @@ class CrackingStrategiesTestCase(CrackAssertionsMixin, unittest.TestCase):
         result = ctx.crack(target, crack_len=4)
         self.assertEqual(result.value, plaintext)
         self.assertCracked(result, target, ctx)
+
+    def test_fmpz_callback_accepts_verified_candidate(self):
+        plaintext = b"abcd"
+        offset_basis = int("6c62272e07bb014262b821756295c58d", 16)
+        prime = int("0000000001000000000000000000013b", 16)
+        ctx = CrackContext(
+            offset_basis=offset_basis,
+            prime=prime,
+            bit_length=128,
+            valid_chars=LOWER,
+        )
+        seen = []
+
+        result = ctx.crack(
+            fnv(plaintext, offset_basis, prime, 128),
+            crack_len=4,
+            callback=lambda candidate: seen.append(candidate) or True,
+        )
+
+        self.assertEqual(seen, [plaintext])
+        self.assertEqual(result.status, CrackStatus.SUCCESS)
+        self.assertEqual(result.value, plaintext)
 
     def test_fmpz_enumerate_path(self):
         plaintext = b"abcd1234"

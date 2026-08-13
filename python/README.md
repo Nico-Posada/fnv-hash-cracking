@@ -83,6 +83,25 @@ result = ctx.crack(
 Lower values are faster and can miss harder cases. Higher values improve coverage
 but can be much slower.
 
+To inspect multiple verified matches, pass a callback. A truthy return accepts
+the current candidate and stops; a falsey return rejects it and continues:
+
+```python
+matches = []
+
+def accept(candidate):
+    matches.append(candidate)
+    return len(matches) == 10
+
+result = ctx.crack(target_hash, crack_len=8, callback=accept)
+```
+
+The callback receives each complete verified candidate as `bytes`, including
+the configured prefix and suffix. With no callback, `crack()` keeps its
+first-match behavior. Returning false every time runs until bounded exhaustion
+and returns `CrackResult(FAILED, None)` even though `matches` contains every
+offered result.
+
 ## API
 
 ```python

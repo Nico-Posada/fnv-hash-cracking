@@ -2,13 +2,34 @@
 #include "helpers.h"
 #include "interrupt.h"
 
-#ifdef FNVCRACK_PYTHON_EXTENSION
-#define FNVCRACK_BEGIN_ALLOW_THREADS Py_BEGIN_ALLOW_THREADS
-#define FNVCRACK_END_ALLOW_THREADS Py_END_ALLOW_THREADS
-#else
-#define FNVCRACK_BEGIN_ALLOW_THREADS
-#define FNVCRACK_END_ALLOW_THREADS
-#endif
+typedef struct {
+    PyObject* callback;
+    PyThreadState* thread_state;
+    bool failed;
+} python_crack_callback_ctx_t;
+
+static bool _python_crack_candidate(char_buffer candidate, void* userdata) {
+    python_crack_callback_ctx_t* ctx = userdata;
+    PyEval_RestoreThread(ctx->thread_state);
+
+    PyObject* candidate_obj = PyBytes_FromStringAndSize(candidate.data, candidate.length);
+    PyObject* callback_result = NULL;
+    int accepted = -1;
+    if (candidate_obj) {
+        callback_result = PyObject_CallOneArg(ctx->callback, candidate_obj);
+        if (callback_result) {
+            accepted = PyObject_IsTrue(callback_result);
+        }
+    }
+
+    Py_XDECREF(callback_result);
+    Py_XDECREF(candidate_obj);
+    if (accepted < 0) {
+        ctx->failed = true;
+    }
+    ctx->thread_state = PyEval_SaveThread();
+    return accepted != 0;
+}
 
 void CrackContext_dealloc(CrackContext* self) {
     destroy_crack_ctx(self->ctx);
@@ -322,22 +343,30 @@ finish:
 }
 
 PyObject* CrackContext_crack(CrackContext* self, PyObject* args, PyObject* kwds) {
-    static char* kwlist[] = {"target", "crack_len", "enum_bound", "max_enum_candidates", "incremental", NULL};
+    static char* kwlist[] = {
+        "target", "crack_len", "enum_bound", "max_enum_candidates", "incremental", "callback", NULL
+    };
 
     PyObject *target = NULL, *crack_len_obj = NULL, *enum_bound_obj = NULL, *max_enum_candidates_obj = NULL,
-             *incremental_obj = NULL;
+             *incremental_obj = NULL, *callback_obj = Py_None;
 
     if (!PyArg_ParseTupleAndKeywords(
             args,
             kwds,
-            "OOOOO",
+            "OOOOO|O",
             kwlist,
             &target,
             &crack_len_obj,
             &enum_bound_obj,
             &max_enum_candidates_obj,
-            &incremental_obj
+            &incremental_obj,
+            &callback_obj
         )) {
+        return NULL;
+    }
+
+    if (!Py_IsNone(callback_obj) && !PyCallable_Check(callback_obj)) {
+        PyErr_SetString(PyExc_TypeError, "callback must be callable or None");
         return NULL;
     }
 
@@ -409,12 +438,19 @@ PyObject* CrackContext_crack(CrackContext* self, PyObject* args, PyObject* kwds)
         return NULL;
     }
 
+    python_crack_callback_ctx_t callback_ctx = {
+        .callback = Py_IsNone(callback_obj) ? NULL : Py_NewRef(callback_obj),
+        .thread_state = NULL,
+        .failed = false,
+    };
+
     bool lease_acquired = false;
     bool sync_failed = false;
     if (fnvcrack_install_interrupt_handler() != 0) {
         if (target_fmpz_initialized) {
             fmpz_clear(target_fmpz);
         }
+        Py_XDECREF(callback_ctx.callback);
         PyErr_SetString(CrackException, "Failed to install interrupt handler");
         return NULL;
     }
@@ -425,25 +461,73 @@ PyObject* CrackContext_crack(CrackContext* self, PyObject* args, PyObject* kwds)
         goto cleanup_acquired;
     }
 
-    FNVCRACK_BEGIN_ALLOW_THREADS
+    callback_ctx.thread_state = PyEval_SaveThread();
     if (self->ctx->uses_fmpz) {
         if (incremental) {
-            crack_result =
-                crack_fmpz_limits(self->ctx, target_fmpz, &output, crack_len, enum_bound, max_enum_candidates);
+            if (callback_ctx.callback) {
+                crack_result = crack_fmpz_callback_limits(
+                    self->ctx,
+                    target_fmpz,
+                    &output,
+                    crack_len,
+                    enum_bound,
+                    max_enum_candidates,
+                    _python_crack_candidate,
+                    &callback_ctx
+                );
+            } else {
+                crack_result =
+                    crack_fmpz_limits(self->ctx, target_fmpz, &output, crack_len, enum_bound, max_enum_candidates);
+            }
+        } else if (callback_ctx.callback) {
+            crack_result = crack_fmpz_with_len_callback_limits(
+                self->ctx,
+                target_fmpz,
+                &output,
+                crack_len + (uint32_t)known_len,
+                enum_bound,
+                max_enum_candidates,
+                _python_crack_candidate,
+                &callback_ctx
+            );
         } else {
             crack_result = crack_fmpz_with_len_limits(
                 self->ctx, target_fmpz, &output, crack_len + (uint32_t)known_len, enum_bound, max_enum_candidates
             );
         }
     } else if (incremental) {
-        crack_result =
-            crack_u64_limits(self->ctx, target_u64, &output, crack_len, enum_bound, max_enum_candidates);
+        if (callback_ctx.callback) {
+            crack_result = crack_u64_callback_limits(
+                self->ctx,
+                target_u64,
+                &output,
+                crack_len,
+                enum_bound,
+                max_enum_candidates,
+                _python_crack_candidate,
+                &callback_ctx
+            );
+        } else {
+            crack_result =
+                crack_u64_limits(self->ctx, target_u64, &output, crack_len, enum_bound, max_enum_candidates);
+        }
+    } else if (callback_ctx.callback) {
+        crack_result = crack_u64_with_len_callback_limits(
+            self->ctx,
+            target_u64,
+            &output,
+            crack_len + (uint32_t)known_len,
+            enum_bound,
+            max_enum_candidates,
+            _python_crack_candidate,
+            &callback_ctx
+        );
     } else {
         crack_result = crack_u64_with_len_limits(
             self->ctx, target_u64, &output, crack_len + (uint32_t)known_len, enum_bound, max_enum_candidates
         );
     }
-    FNVCRACK_END_ALLOW_THREADS
+    PyEval_RestoreThread(callback_ctx.thread_state);
 
 cleanup_acquired:
     if (target_fmpz_initialized) {
@@ -455,6 +539,13 @@ cleanup_acquired:
         release_result = fnvcrack_restore_interrupt_handler();
         lease_acquired = false;
     }
+
+    if (callback_ctx.failed) {
+        clear_char_buffer(&output);
+        Py_XDECREF(callback_ctx.callback);
+        return NULL;
+    }
+    Py_XDECREF(callback_ctx.callback);
     bool interrupted = crack_result == INTERRUPTED || fnvcrack_interrupted();
 
     if (sync_failed) {

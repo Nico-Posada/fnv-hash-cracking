@@ -110,6 +110,26 @@ result = ctx.crack(
 `max_enum_candidates=0` means unlimited. Setting `valid_chars=None` allows all
 256 byte values, including NUL bytes.
 
+#### Inspecting Multiple Matches
+
+By default, `crack()` stops at the first verified match. Pass a callback to
+inspect each complete verified candidate as `bytes`. A truthy return accepts
+that candidate and stops; a falsey return rejects it and continues:
+
+```python
+matches = []
+
+def accept(candidate):
+    matches.append(candidate)
+    return len(matches) == 10
+
+result = ctx.crack(target_hash, crack_len=8, callback=accept)
+```
+
+Returning false every time runs until the bounded search is exhausted. The
+result is then `CrackResult(FAILED, None)` even though `matches` contains every
+candidate offered to the callback.
+
 #### Batch Cracking
 
 `batch_crack()` cracks multiple targets in parallel and preserves their input
@@ -218,6 +238,17 @@ int main(void) {
 - `crack_fmpz()` searches arbitrary-precision hashes across a range of total
   lengths.
 - The corresponding `_limits()` functions accept custom enumeration limits.
+- `crack_u64_with_len_callback_limits()` and
+  `crack_fmpz_with_len_callback_limits()` add callbacks to fixed-length
+  searches.
+- `crack_u64_callback_limits()` and `crack_fmpz_callback_limits()` add
+  callbacks to incremental-length searches.
+
+The callback receives a complete verified `char_buffer`, including any prefix
+and suffix. Its data is borrowed and valid only during the callback. Returning
+true accepts the candidate and transfers its allocation to `out_buffer`;
+returning false rejects it, frees it, and continues enumeration.
+
 
 Unlike Python's `crack_len`, C `expected_len` and `max_search_len` include the
 known prefix and suffix.

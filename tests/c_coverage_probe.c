@@ -197,6 +197,29 @@ static void check_context_api(void) {
     fmpz_clear(offset);
 }
 
+typedef struct {
+    size_t calls;
+    char first[2];
+    char accepted[2];
+} crack_callback_state;
+
+static bool accept_second_crack_candidate(char_buffer candidate, void* userdata) {
+    crack_callback_state* state = userdata;
+    assert(candidate.length == 2);
+    assert(fnv_u64_with_len(candidate, 0x25, 0xb3, 8) == 0xa5);
+
+    state->calls++;
+    if (state->calls == 1) {
+        memcpy(state->first, candidate.data, candidate.length);
+        return false;
+    }
+
+    assert(state->calls == 2);
+    assert(memcmp(state->first, candidate.data, candidate.length) != 0);
+    memcpy(state->accepted, candidate.data, candidate.length);
+    return true;
+}
+
 static void check_crack_api(void) {
     char_buffer out = {NULL, 0};
 
@@ -220,6 +243,27 @@ static void check_crack_api(void) {
 
     assert(crack_u64_limits(ctx, 0, &out, 0, CRACK_DEFAULT_ENUM_BOUND, 1) == FAILED);
     destroy_crack_ctx(ctx);
+
+    CREATE_CONTEXT(callback_ctx);
+    assert(init_crack_ctx(callback_ctx, 0x25, 0xb3, 8, "abcdefghijklmnopqrstuvwxyz", NULL, NULL));
+    crack_callback_state callback_state = {0};
+    assert(
+        crack_u64_with_len_callback_limits(
+            callback_ctx,
+            0xa5,
+            &out,
+            2,
+            255,
+            0,
+            accept_second_crack_candidate,
+            &callback_state
+        ) == SUCCESS
+    );
+    assert(callback_state.calls == 2);
+    assert(out.length == 2);
+    assert(memcmp(out.data, callback_state.accepted, out.length) == 0);
+    clear_result(&out);
+    destroy_crack_ctx(callback_ctx);
 
     fmpz_t offset, prime, ftarget;
     fmpz_init_set_ui(offset, FNV64_OFFSET_BASIS);
