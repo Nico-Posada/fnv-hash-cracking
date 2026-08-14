@@ -121,13 +121,21 @@ jobs:
           "VCPKG_CACHE_IMAGE=$env:ImageOS-$env:ImageVersion" |
             Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
 
+      - name: Set up pinned vcpkg
+        shell: pwsh
+        run: |
+          $baseline = (Get-Content "$env:GITHUB_WORKSPACE\vcpkg.json" | ConvertFrom-Json).'builtin-baseline'
+          $vcpkgRoot = Join-Path $env:RUNNER_TEMP "vcpkg"
+          git clone --filter=blob:none --no-checkout https://github.com/microsoft/vcpkg.git $vcpkgRoot
+          git -C $vcpkgRoot checkout --detach $baseline
+          & "$vcpkgRoot\bootstrap-vcpkg.bat" -disableMetrics
+          "FNVCRACK_VCPKG_ROOT=$vcpkgRoot" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+
       - name: Cache vcpkg binaries
         uses: actions/cache@v6
         with:
           path: .vcpkg-cache
-          key: vcpkg-${{ runner.os }}-${{ runner.arch }}-${{ env.VCPKG_CACHE_IMAGE }}-${{ hashFiles('vcpkg.json') }}-autoconf2.71-4
-          restore-keys: |
-            vcpkg-${{ runner.os }}-${{ runner.arch }}-
+          key: vcpkg-${{ runner.os }}-${{ runner.arch }}-${{ env.VCPKG_CACHE_IMAGE }}-${{ hashFiles('vcpkg.json', '.github/workflows/wheels.yml') }}
 
       - name: Pin available GMP build dependency
         shell: pwsh
@@ -135,7 +143,7 @@ jobs:
           $overlayRoot = Join-Path $env:RUNNER_TEMP "vcpkg-overlays"
           $gmpPort = Join-Path $overlayRoot "gmp"
           New-Item -ItemType Directory -Force $overlayRoot | Out-Null
-          Copy-Item "$env:VCPKG_INSTALLATION_ROOT\ports\gmp" $gmpPort -Recurse
+          Copy-Item "$env:FNVCRACK_VCPKG_ROOT\ports\gmp" $gmpPort -Recurse
 
           $portfile = Join-Path $gmpPort "portfile.cmake"
           $contents = Get-Content $portfile -Raw
@@ -156,14 +164,12 @@ jobs:
         shell: pwsh
         run: |
           New-Item -ItemType Directory -Force $env:VCPKG_DEFAULT_BINARY_CACHE | Out-Null
-          $baseline = (Get-Content "$env:GITHUB_WORKSPACE\vcpkg.json" | ConvertFrom-Json).'builtin-baseline'
-          git -C $env:VCPKG_INSTALLATION_ROOT fetch origin $baseline --depth=1
-          & "$env:VCPKG_INSTALLATION_ROOT\vcpkg.exe" install `
+          & "$env:FNVCRACK_VCPKG_ROOT\vcpkg.exe" install `
             "--overlay-ports=$env:RUNNER_TEMP\vcpkg-overlays" `
             "--triplet=x64-windows" `
             "--x-manifest-root=$env:GITHUB_WORKSPACE" `
-            "--x-install-root=$env:VCPKG_INSTALLATION_ROOT\installed"
-          $deps = Join-Path $env:VCPKG_INSTALLATION_ROOT "installed\x64-windows"
+            "--x-install-root=$env:FNVCRACK_VCPKG_ROOT\installed"
+          $deps = Join-Path $env:FNVCRACK_VCPKG_ROOT "installed\x64-windows"
           "FNVCRACK_DEPS=$deps" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
 
       - name: Build wheels
