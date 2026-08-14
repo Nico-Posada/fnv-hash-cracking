@@ -51,6 +51,8 @@ uv add fnvcrack
 The Python package provides a high-level API for standard and custom FNV-1a
 hashes.
 
+More runnable demos are available in the [`examples/`](examples/) directory.
+
 #### Basic Example
 
 ```python
