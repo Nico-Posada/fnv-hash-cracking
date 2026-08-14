@@ -125,9 +125,32 @@ jobs:
         uses: actions/cache@v6
         with:
           path: .vcpkg-cache
-          key: vcpkg-${{ runner.os }}-${{ runner.arch }}-${{ env.VCPKG_CACHE_IMAGE }}-${{ hashFiles('vcpkg.json') }}
+          key: vcpkg-${{ runner.os }}-${{ runner.arch }}-${{ env.VCPKG_CACHE_IMAGE }}-${{ hashFiles('vcpkg.json') }}-autoconf2.71-4
           restore-keys: |
             vcpkg-${{ runner.os }}-${{ runner.arch }}-
+
+      - name: Pin available GMP build dependency
+        shell: pwsh
+        run: |
+          $overlayRoot = Join-Path $env:RUNNER_TEMP "vcpkg-overlays"
+          $gmpPort = Join-Path $overlayRoot "gmp"
+          New-Item -ItemType Directory -Force $overlayRoot | Out-Null
+          Copy-Item "$env:VCPKG_INSTALLATION_ROOT\ports\gmp" $gmpPort -Recurse
+
+          $portfile = Join-Path $gmpPort "portfile.cmake"
+          $contents = Get-Content $portfile -Raw
+          $oldUrl = "autoconf2.71-2.71-3-any.pkg.tar.zst"
+          $oldHash = "dd312c428b2e19afd00899eb53ea4255794dea4c19d1d6dea2419cb6a54209ea2130d48abbc20af12196b9f628143436f736fbf889809c2c2291be0c69c0e306"
+          if (!$contents.Contains($oldUrl) -or !$contents.Contains($oldHash)) {
+            throw "The vcpkg GMP source pin changed; update or remove this overlay."
+          }
+
+          $contents = $contents.Replace($oldUrl, "autoconf2.71-2.71-4-any.pkg.tar.zst")
+          $contents = $contents.Replace(
+            $oldHash,
+            "c93b791eb55893cbe7c425e764074837355fd165deb7b1775f652c8e25d9d1f0cdd4120ab710d56fb859b7df55c4f971eccda7c112448f60615bff8a2dc81166"
+          )
+          Set-Content $portfile $contents -NoNewline
 
       - name: Install native dependencies
         shell: pwsh
@@ -136,6 +159,7 @@ jobs:
           $baseline = (Get-Content "$env:GITHUB_WORKSPACE\vcpkg.json" | ConvertFrom-Json).'builtin-baseline'
           git -C $env:VCPKG_INSTALLATION_ROOT fetch origin $baseline --depth=1
           & "$env:VCPKG_INSTALLATION_ROOT\vcpkg.exe" install `
+            "--overlay-ports=$env:RUNNER_TEMP\vcpkg-overlays" `
             "--triplet=x64-windows" `
             "--x-manifest-root=$env:GITHUB_WORKSPACE" `
             "--x-install-root=$env:VCPKG_INSTALLATION_ROOT\installed"
