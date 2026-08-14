@@ -133,7 +133,7 @@ class CrackingStrategiesTestCase(CrackAssertionsMixin, unittest.TestCase):
         )
 
         self.assertEqual(
-            ctx.batch_crack(targets, crack_len=2, incremental=True),
+            ctx.batch_crack(targets, crack_len=2, incremental=True, processes=1),
             [b"preasuf", None, b"prebbsuf"],
         )
         self.assertEqual(ctx.batch_crack([], crack_len=2), [])

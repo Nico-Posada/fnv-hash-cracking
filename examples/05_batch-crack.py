@@ -18,7 +18,12 @@ if __name__ == "__main__": # we need the guard since this uses multiprocessing u
     )
 
     with timer():
-        results = ctx.batch_crack(hashed_names, 10, incremental=True)
+        results = ctx.batch_crack(
+            hashed_names,
+            10,
+            incremental=True,
+            processes=4,  # None uses multiprocessing's default worker count
+        )
     
     total = sum(1 for r in results if r is not None)
     print(f"Cracked {total}/{len(results)}")
@@ -29,16 +34,16 @@ if __name__ == "__main__": # we need the guard since this uses multiprocessing u
         print(f"{hashed:#x} => {cracked!r}")
 
 r"""
-Took 1.983369s
+Took 3.443349s
 Cracked 1000/1000
-0xd097a2f675101a18 => b'2VXzU2'
-0x677cfb32af63f39 => b'ER25p2'
-0xb580031b9bd19bc2 => b'95ZFzA'
-0xd4b26352074e607c => b'26SC00an'
-0xaddf2e7dd4153fca => b'zyd4wW'
-0xbbf5fa447fa9077 => b'KPQxM979dN'
-0x45646013e34320d => b'uo3rnXQ'
-0x87d516778336c18a => b'khXA3Nf'
-0x36b75aed4483f25c => b'V7yHWL65.E'
-0x8e632a75b36333af => b'1oVvvvR.Fd'
+0x599e78e1886f1ea8 => b'XZ_zXTkhut'
+0x5bdd20bf2a25a9e7 => b'oZoNtZVz'
+0x7f5a1f94c9086fab => b'ufFSnP'
+0xaf6bc6d7cf9d9c91 => b'_9._05'
+0x78e95fa38b6c8965 => b'7sWUZP'
+0x335360b10368c014 => b'5xr1maugC'
+0x91249347a486a91a => b'76qDno'
+0xe58dbc5f4d13671a => b't4EtLS1ZH'
+0x4352cf264b5a7d0d => b'kx6BnVDu'
+0x5c1b826b8217cd91 => b'qFPkLIW'
 """

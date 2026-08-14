@@ -87,6 +87,7 @@ class CrackContext(_fnvcrack.NativeContext):
         enum_bound: int = DEFAULT_ENUM_BOUND,
         max_enum_candidates: int = DEFAULT_MAX_ENUM_CANDIDATES,
         incremental: bool = False,
+        processes: int | None = None,
     ) -> list[bytes | None]:
         """Crack targets in parallel and return ordered values or ``None``.
 
@@ -95,10 +96,11 @@ class CrackContext(_fnvcrack.NativeContext):
         :param enum_bound: Search radius around the lattice solution.
         :param max_enum_candidates: Maximum enumeration candidates. ``0`` means unlimited.
         :param incremental: Search all unknown lengths from 1 through ``crack_len``.
+        :param processes: Worker process count. ``None`` uses the multiprocessing default.
         :returns: Ordered cracked values, with ``None`` for unsuccessful targets.
         Call from within ``if __name__ == "__main__"`` on spawn-based platforms.
         """
-        with Pool() as pool:
+        with Pool(processes=processes) as pool:
             results = pool.starmap(
                 self.crack,
                 (
