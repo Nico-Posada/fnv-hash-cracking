@@ -4,22 +4,32 @@ on:
   push:
     branches:
       - main
-    tags:
-      - "v*"
   pull_request:
   release:
     types:
       - published
   workflow_dispatch:
+    inputs:
+      cold-windows:
+        description: Build Windows dependencies without the binary cache
+        required: false
+        type: boolean
+        default: false
+  schedule:
+    - cron: "0 8 1 * *"
+
+permissions:
+  contents: read
 
 concurrency:
-  group: wheels-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
-  cancel-in-progress: true
+  group: wheels-${{ github.workflow }}-${{ github.event_name }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name != 'release' }}
 
 jobs:
   test:
     name: Python ${{ matrix.python-version }}
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
 
     strategy:
       fail-fast: false
@@ -32,16 +42,19 @@ jobs:
 
     steps:
       - name: Check out repository
-        uses: actions/checkout@v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
 
       - name: Set up Python
-        uses: actions/setup-python@v7
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
           python-version: ${{ matrix.python-version }}
 
       - name: Set up uv
-        uses: astral-sh/setup-uv@v9.0.0
+        uses: astral-sh/setup-uv@c771a70e6277c0a99b617c7a806ffedaca235ff9 # v9.0.0
         with:
+          version: "0.12.5"
           enable-cache: true
           prune-cache: true
 
@@ -55,11 +68,14 @@ jobs:
 
   build-linux-wheels:
     name: manylinux wheels
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
 
     steps:
       - name: Check out repository
-        uses: actions/checkout@v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
 
       - name: Resolve micromamba release
         shell: bash
@@ -75,7 +91,7 @@ jobs:
             ' >> "$GITHUB_ENV"
 
       - name: Build wheels
-        uses: pypa/cibuildwheel@v3.4.1
+        uses: pypa/cibuildwheel@1828c10ab37f080699c7b81cea34097c684a7074 # v4.2.0
         env:
           CIBW_ENVIRONMENT_PASS_LINUX: MICROMAMBA_URL MICROMAMBA_SHA256
           CIBW_BEFORE_ALL_LINUX: |
@@ -98,27 +114,32 @@ jobs:
           extras: uv
           output-dir: wheelhouse
 
-      - name: Upload release artifacts
-        if: github.event_name == 'release' || startsWith(github.ref, 'refs/tags/')
-        uses: actions/upload-artifact@v4
+      - name: Upload wheel artifacts
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: fnvcrack-manylinux-wheels
           path: wheelhouse/*.whl
+          retention-days: 7
 
   build-windows-wheels:
     name: Windows AMD64 wheels
-    runs-on: windows-latest
+    runs-on: windows-2025-vs2026
+    timeout-minutes: 120
     env:
       VCPKG_DEFAULT_BINARY_CACHE: ${{ github.workspace }}\.vcpkg-cache
 
     steps:
       - name: Check out repository
-        uses: actions/checkout@v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
 
       - name: Set vcpkg cache key
         shell: pwsh
         run: |
-          "VCPKG_CACHE_IMAGE=$env:ImageOS-$env:ImageVersion" |
+          "VCPKG_CACHE_IMAGE=$env:ImageOS" |
+            Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+          "VCPKG_CACHE_VERSION=$env:ImageVersion" |
             Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
 
       - name: Set up pinned vcpkg
@@ -132,40 +153,19 @@ jobs:
           "FNVCRACK_VCPKG_ROOT=$vcpkgRoot" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
 
       - name: Cache vcpkg binaries
-        uses: actions/cache@v6
+        if: github.event_name != 'schedule' && inputs['cold-windows'] != true
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: .vcpkg-cache
-          key: vcpkg-${{ runner.os }}-${{ runner.arch }}-${{ env.VCPKG_CACHE_IMAGE }}-${{ hashFiles('vcpkg.json', '.github/workflows/wheels.yml') }}
-
-      - name: Pin available GMP build dependency
-        shell: pwsh
-        run: |
-          $overlayRoot = Join-Path $env:RUNNER_TEMP "vcpkg-overlays"
-          $gmpPort = Join-Path $overlayRoot "gmp"
-          New-Item -ItemType Directory -Force $overlayRoot | Out-Null
-          Copy-Item "$env:FNVCRACK_VCPKG_ROOT\ports\gmp" $gmpPort -Recurse
-
-          $portfile = Join-Path $gmpPort "portfile.cmake"
-          $contents = Get-Content $portfile -Raw
-          $oldUrl = "autoconf2.71-2.71-3-any.pkg.tar.zst"
-          $oldHash = "dd312c428b2e19afd00899eb53ea4255794dea4c19d1d6dea2419cb6a54209ea2130d48abbc20af12196b9f628143436f736fbf889809c2c2291be0c69c0e306"
-          if (!$contents.Contains($oldUrl) -or !$contents.Contains($oldHash)) {
-            throw "The vcpkg GMP source pin changed; update or remove this overlay."
-          }
-
-          $contents = $contents.Replace($oldUrl, "autoconf2.71-2.71-4-any.pkg.tar.zst")
-          $contents = $contents.Replace(
-            $oldHash,
-            "c93b791eb55893cbe7c425e764074837355fd165deb7b1775f652c8e25d9d1f0cdd4120ab710d56fb859b7df55c4f971eccda7c112448f60615bff8a2dc81166"
-          )
-          Set-Content $portfile $contents -NoNewline
+          key: vcpkg-${{ runner.os }}-${{ runner.arch }}-${{ env.VCPKG_CACHE_IMAGE }}-${{ hashFiles('vcpkg.json', 'vcpkg-configuration.json', 'tools/vcpkg-ports/**') }}-${{ env.VCPKG_CACHE_VERSION }}
+          restore-keys: |
+            vcpkg-${{ runner.os }}-${{ runner.arch }}-${{ env.VCPKG_CACHE_IMAGE }}-${{ hashFiles('vcpkg.json', 'vcpkg-configuration.json', 'tools/vcpkg-ports/**') }}-
 
       - name: Install native dependencies
         shell: pwsh
         run: |
           New-Item -ItemType Directory -Force $env:VCPKG_DEFAULT_BINARY_CACHE | Out-Null
           & "$env:FNVCRACK_VCPKG_ROOT\vcpkg.exe" install `
-            "--overlay-ports=$env:RUNNER_TEMP\vcpkg-overlays" `
             "--triplet=x64-windows" `
             "--x-manifest-root=$env:GITHUB_WORKSPACE" `
             "--x-install-root=$env:FNVCRACK_VCPKG_ROOT\installed"
@@ -173,21 +173,22 @@ jobs:
           "FNVCRACK_DEPS=$deps" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
 
       - name: Build wheels
-        uses: pypa/cibuildwheel@v3.4.1
+        uses: pypa/cibuildwheel@1828c10ab37f080699c7b81cea34097c684a7074 # v4.2.0
         with:
           extras: uv
           output-dir: wheelhouse
 
-      - name: Upload release artifacts
-        if: github.event_name == 'release' || startsWith(github.ref, 'refs/tags/')
-        uses: actions/upload-artifact@v4
+      - name: Upload wheel artifacts
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: fnvcrack-windows-amd64-wheels
           path: wheelhouse/*.whl
+          retention-days: 7
 
   build-macos-wheels:
     name: macOS ${{ matrix.arch }} wheels
     runs-on: ${{ matrix.runner }}
+    timeout-minutes: 90
 
     strategy:
       fail-fast: false
@@ -196,9 +197,9 @@ jobs:
           - runner: macos-15-intel
             arch: x86_64
             deployment_target: "15.0"
-          - runner: macos-14
+          - runner: macos-15
             arch: arm64
-            deployment_target: "14.0"
+            deployment_target: "15.0"
 
     env:
       CIBW_ARCHS_MACOS: ${{ matrix.arch }}
@@ -206,78 +207,163 @@ jobs:
 
     steps:
       - name: Check out repository
-        uses: actions/checkout@v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
 
       - name: Build wheels
-        uses: pypa/cibuildwheel@v3.4.1
+        uses: pypa/cibuildwheel@1828c10ab37f080699c7b81cea34097c684a7074 # v4.2.0
         with:
           extras: uv
           output-dir: wheelhouse
 
-      - name: Upload release artifacts
-        if: github.event_name == 'release' || startsWith(github.ref, 'refs/tags/')
-        uses: actions/upload-artifact@v4
+      - name: Upload wheel artifacts
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: fnvcrack-macos-${{ matrix.arch }}-wheels
           path: wheelhouse/*.whl
+          retention-days: 7
 
   build-sdist:
     name: source distribution
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
 
     steps:
       - name: Check out repository
-        uses: actions/checkout@v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
 
       - name: Set up Python
-        uses: actions/setup-python@v7
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
           python-version: "3.14"
 
       - name: Set up uv
-        uses: astral-sh/setup-uv@v9.0.0
+        uses: astral-sh/setup-uv@c771a70e6277c0a99b617c7a806ffedaca235ff9 # v9.0.0
         with:
+          version: "0.12.5"
           enable-cache: true
           prune-cache: true
 
       - name: Build source distribution
         run: uv build --sdist --out-dir dist --no-sources
 
-      - name: Upload release artifacts
-        if: github.event_name == 'release' || startsWith(github.ref, 'refs/tags/')
-        uses: actions/upload-artifact@v4
+      - name: Upload source artifact
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: fnvcrack-sdist
           path: dist/*.tar.gz
+          retention-days: 7
+
+  test-wheels:
+    name: Test ${{ matrix.name }} wheel
+    needs:
+      - build-linux-wheels
+      - build-macos-wheels
+      - build-windows-wheels
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 20
+
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: manylinux x86_64
+            runner: ubuntu-24.04
+            artifact: fnvcrack-manylinux-wheels
+          - name: Windows AMD64
+            runner: windows-2025-vs2026
+            artifact: fnvcrack-windows-amd64-wheels
+          - name: macOS x86_64
+            runner: macos-15-intel
+            artifact: fnvcrack-macos-x86_64-wheels
+          - name: macOS ARM64
+            runner: macos-15
+            artifact: fnvcrack-macos-arm64-wheels
+
+    steps:
+      - name: Download wheel artifact
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: ${{ matrix.artifact }}
+          path: wheelhouse
+
+      - name: Set up Python
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.14"
+
+      - name: Install wheel without an index
+        run: python -m pip install --no-index --find-links wheelhouse fnvcrack
+
+      - name: Check installed dependencies
+        run: python -m pip check
+
+      - name: Smoke test wheel
+        run: python -I -c "from fnvcrack import CrackContext; result = CrackContext(valid_chars=b'a').crack(0xaf63dc4c8601ec8c, crack_len=1); assert result.value == b'a', result"
+
+  test-sdist:
+    name: Test source distribution
+    needs:
+      - build-sdist
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+
+    steps:
+      - name: Download source artifact
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: fnvcrack-sdist
+          path: dist
+
+      - name: Set up Python
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.14"
+
+      - name: Install native dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y build-essential libgmp-dev libflint-dev pkg-config
+
+      - name: Install source distribution
+        run: |
+          python -m venv .venv
+          .venv/bin/python -m pip install dist/*.tar.gz
+
+      - name: Smoke test source distribution
+        run: .venv/bin/python -I -c "from fnvcrack import CrackContext; result = CrackContext(valid_chars=b'a').crack(0xaf63dc4c8601ec8c, crack_len=1); assert result.value == b'a', result"
 
   publish-pypi:
     name: publish to PyPI
     if: github.event_name == 'release' && github.event.action == 'published'
     needs:
       - test
-      - build-linux-wheels
-      - build-macos-wheels
-      - build-windows-wheels
-      - build-sdist
-    runs-on: ubuntu-latest
+      - test-sdist
+      - test-wheels
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
     permissions:
       contents: read
+      id-token: write
     environment:
       name: pypi
       url: https://pypi.org/p/fnvcrack
 
     steps:
       - name: Download release artifacts
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
           pattern: fnvcrack-*
           path: dist
           merge-multiple: true
 
       - name: Set up uv
-        uses: astral-sh/setup-uv@v9.0.0
+        uses: astral-sh/setup-uv@c771a70e6277c0a99b617c7a806ffedaca235ff9 # v9.0.0
+        with:
+          version: "0.12.5"
 
       - name: Publish to PyPI
-        env:
-          UV_PUBLISH_TOKEN: ${{ secrets.PYPI_TOKEN }}
         run: uv publish dist/*

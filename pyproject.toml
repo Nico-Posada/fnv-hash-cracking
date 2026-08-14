@@ -56,7 +56,6 @@ test-command = "python -m pytest {project}/tests"
 
 [tool.cibuildwheel.windows]
 archs = ["AMD64"]
-before-build = "pip install delvewheel"
 repair-wheel-command = 'delvewheel repair --add-path "%FNVCRACK_DEPS%/bin" -w {dest_dir} {wheel}'
 
 [tool.cibuildwheel.macos]
