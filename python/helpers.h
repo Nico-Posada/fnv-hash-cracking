@@ -1,3 +1,15 @@
+#pragma once
+
+#include <assert.h>
+#include <stdbool.h>
+#include <stddef.h>
+#include <stdint.h>
+
+#include <Python.h>
+#include <flint/fmpz.h>
+
+#include "context.h"
+
 /*
     Helper functions for interfacing between the types used for the internal crack ctx
     and the python one.
