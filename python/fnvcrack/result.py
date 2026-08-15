@@ -1,5 +1,5 @@
-from dataclasses import dataclass
 from enum import IntEnum
+from typing import NamedTuple
 
 
 class CrackStatus(IntEnum):
@@ -24,8 +24,7 @@ class CrackStatus(IntEnum):
     """A matching input was found."""
 
 
-@dataclass(frozen=True)
-class CrackResult:
+class CrackResult(NamedTuple):
     """Result returned by :meth:`fnvcrack.CrackContext.crack`.
 
     :ivar status: Numeric crack status.

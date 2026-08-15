@@ -6,7 +6,10 @@ from fnvcrack._fnvcrack import NativeContext
 
 class ValidationTestCase(unittest.TestCase):
     def test_status_helpers(self):
-        self.assertTrue(CrackResult(CrackStatus.SUCCESS, b"abc").ok)
+        result = CrackResult(CrackStatus.SUCCESS, b"abc")
+        self.assertIsInstance(result, tuple)
+        self.assertEqual(result, (CrackStatus.SUCCESS, b"abc"))
+        self.assertTrue(result.ok)
         self.assertFalse(CrackResult(CrackStatus.FAILED, None).ok)
         self.assertEqual(
             CrackResult(CrackStatus.INTERRUPTED, None).status_name,
