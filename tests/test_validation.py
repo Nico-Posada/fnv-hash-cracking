@@ -22,11 +22,14 @@ class ValidationTestCase(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "enum_bound"):
             ctx.crack(0, crack_len=8, enum_bound=-1)
 
-        with self.assertRaisesRegex(TypeError, "enum_bound"):
+        with self.assertRaisesRegex(TypeError, "^enum_bound must be an int, got 'str'$"):
             ctx.crack(0, crack_len=8, enum_bound="4")
 
         with self.assertRaisesRegex(ValueError, "max_enum_candidates"):
             ctx.crack(0, crack_len=8, max_enum_candidates=-1)
+
+        with self.assertRaisesRegex(TypeError, "^max_enum_candidates must be an int, got 'str'$"):
+            ctx.crack(0, crack_len=8, max_enum_candidates="4")
 
         with self.assertRaisesRegex(OverflowError, "max_enum_candidates"):
             ctx.crack(
@@ -38,7 +41,7 @@ class ValidationTestCase(unittest.TestCase):
         with self.assertRaisesRegex(TypeError, "enum_bound"):
             ctx.crack(0, crack_len=8, enum_bound=True)
 
-        with self.assertRaisesRegex(TypeError, "incremental"):
+        with self.assertRaisesRegex(TypeError, "^incremental must be a bool, got 'str'$"):
             ctx.crack(0, crack_len=8, incremental="true")
 
         with self.assertRaisesRegex(TypeError, "incremental"):
