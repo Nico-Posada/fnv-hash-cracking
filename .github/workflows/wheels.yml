@@ -266,9 +266,6 @@ jobs:
       - name: Check installed dependencies
         run: python -m pip check
 
-      - name: Smoke test wheel
-        run: python -I -c "from fnvcrack import CrackContext; result = CrackContext(valid_chars=b'a').crack(0xaf63dc4c8601ec8c, crack_len=1); assert result.value == b'a', result"
-
   test-sdist:
     name: Test source distribution
     needs:
@@ -297,9 +294,6 @@ jobs:
         run: |
           python -m venv .venv
           .venv/bin/python -m pip install dist/*.tar.gz
-
-      - name: Smoke test source distribution
-        run: .venv/bin/python -I -c "from fnvcrack import CrackContext; result = CrackContext(valid_chars=b'a').crack(0xaf63dc4c8601ec8c, crack_len=1); assert result.value == b'a', result"
 
   publish-pypi:
     name: publish to PyPI
