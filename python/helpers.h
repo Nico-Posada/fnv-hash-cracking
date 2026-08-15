@@ -91,6 +91,17 @@ inline static PyObject* _fix_ctx_pylong_arg(PyObject* obj, const char* const arg
 }
 #define _fix_ctx_pylong_arg(obj, default_arg) _fix_ctx_pylong_arg(obj, #obj, default_arg)
 
+inline static unsigned long long _pylong_num_bits(PyObject* obj) {
+    PyObject* bit_length = PyObject_CallMethod(obj, "bit_length", NULL);
+    if (bit_length == NULL) {
+        return (unsigned long long)-1;
+    }
+
+    const unsigned long long result = PyLong_AsUnsignedLongLong(bit_length);
+    Py_DECREF(bit_length);
+    return result;
+}
+
 inline static bool _ensure_odd_pylong_arg(PyObject* obj, const char* const argname) {
     const unsigned long long low_bits = PyLong_AsUnsignedLongLongMask(obj);
     if (PyErr_Occurred()) {
@@ -121,24 +132,11 @@ inline static bool _ensure_uint_pylong_arg_fits(PyObject* obj, const char* const
         return false;
     }
 
-    PyObject* bit_length = PyObject_CallMethod(obj, "bit_length", NULL);
-    if (bit_length == NULL) {
+    const unsigned long long bit_length = _pylong_num_bits(obj);
+    if (bit_length == (unsigned long long)-1 && PyErr_Occurred()) {
         return false;
     }
-
-    PyObject* max_bits = PyLong_FromUnsignedLong(bits);
-    if (max_bits == NULL) {
-        Py_DECREF(bit_length);
-        return false;
-    }
-
-    int too_large = PyObject_RichCompareBool(bit_length, max_bits, Py_GT);
-    Py_DECREF(max_bits);
-    Py_DECREF(bit_length);
-    if (too_large < 0) {
-        return false;
-    }
-    if (too_large) {
+    if (bit_length > bits) {
         PyErr_Format(PyExc_OverflowError, "%s must fit in uint%u", argname, bits);
         return false;
     }
@@ -179,7 +177,7 @@ _parse_uint32_arg(PyObject* obj, const char* const argname, uint32_t* result, bo
     *result = (uint32_t)temp_val;
     return 1;
 }
-#define _parse_uint32_arg(obj, result, optional, default) _parse_uint32_arg(obj, #obj, result, optional, default)
+#define _parse_uint32_arg(obj, result, optional, default) _parse_uint32_arg(obj, &(#result)[1], result, optional, default)
 
 static int
 _parse_uint64_arg(PyObject* obj, const char* const argname, uint64_t* result, bool optional, uint64_t default_val) {
@@ -215,7 +213,7 @@ _parse_uint64_arg(PyObject* obj, const char* const argname, uint64_t* result, bo
     *result = (uint64_t)temp_val;
     return 1;
 }
-#define _parse_uint64_arg(obj, result, optional, default) _parse_uint64_arg(obj, #obj, result, optional, default)
+#define _parse_uint64_arg(obj, result, optional, default) _parse_uint64_arg(obj, &(#result)[1], result, optional, default)
 
 static int _parse_bool_arg(PyObject* obj, const char* const argname, bool* result) {
     if (!PyBool_Check(obj)) {
@@ -226,3 +224,4 @@ static int _parse_bool_arg(PyObject* obj, const char* const argname, bool* resul
     *result = Py_IsTrue(obj);
     return 1;
 }
+#define _parse_bool_arg(obj, result) _parse_bool_arg(obj, &(#result)[1], result)

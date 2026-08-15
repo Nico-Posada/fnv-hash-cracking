@@ -116,19 +116,13 @@ PyObject* CrackContext_new(PyTypeObject* type, PyObject* args, PyObject* kwds) {
 
 #define ENSURE_BIT_SIZE(arg)                                                                                           \
     do {                                                                                                               \
-        PyObject* tmp = PyObject_CallMethod(arg, "bit_length", NULL);                                                  \
-        if (tmp == NULL)                                                                                               \
+        const unsigned long long real_bit_len = _pylong_num_bits(arg);                                                \
+        if (real_bit_len == (unsigned long long)-1 && PyErr_Occurred())                                               \
             goto fail_ints;                                                                                            \
-        long real_bit_len = PyLong_AsLong(tmp);                                                                        \
-        Py_DECREF(tmp);                                                                                                \
-        if (real_bit_len == -1)                                                                                        \
-            goto fail_ints;                                                                                            \
-        if (real_bit_len < 0 || real_bit_len > UINT32_MAX)                                                             \
-            goto fail_ints;                                                                                            \
-        if ((uint32_t)real_bit_len > bits) {                                                                           \
+        if (real_bit_len > bits) {                                                                                     \
             PyErr_Format(                                                                                              \
                 PyExc_TypeError,                                                                                       \
-                #arg " must have a max bit length of %u (your bit_length arg). Got %R which has a bit length of %ld",  \
+                #arg " must have a max bit length of %u (your bit_length arg). Got %R which has a bit length of %llu", \
                 bits,                                                                                                  \
                 arg,                                                                                                   \
                 real_bit_len                                                                                           \
@@ -395,7 +389,7 @@ PyObject* CrackContext_crack(CrackContext* self, PyObject* args, PyObject* kwds)
     if (!_parse_uint64_arg(max_enum_candidates_obj, &max_enum_candidates, false, CRACK_DEFAULT_MAX_ENUM_CANDIDATES)) {
         return NULL;
     }
-    if (!_parse_bool_arg(incremental_obj, "incremental", &incremental)) {
+    if (!_parse_bool_arg(incremental_obj, &incremental)) {
         return NULL;
     }
     const size_t known_len = get_prefix(self->ctx)->length + get_suffix(self->ctx)->length;
