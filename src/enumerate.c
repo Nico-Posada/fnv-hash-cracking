@@ -11,11 +11,13 @@ typedef struct {
     const fmpz_mat_struct* fit_min;
     const fmpz_mat_struct* fit_max;
     fmpz_mat_struct* current;
+    fmpz* scratch_numerator;
+    fmpz* scratch_quotient;
     enumerate_solution_cb cb;
     void* cb_ctx;
     int64_t* deltas;
     uint32_t dim;
-    uint64_t width;
+    uint32_t enum_bound;
     uint64_t max_candidates;
     uint64_t candidates;
     bool found;
@@ -221,6 +223,83 @@ static void _add_basis_row(enum_search_t* ctx, uint32_t row, int64_t scale) {
     }
 }
 
+static bool _coefficient_bounds(enum_search_t* ctx, uint32_t depth, int64_t* lower, int64_t* upper) {
+    int64_t lo = -(int64_t)ctx->enum_bound;
+    int64_t hi = (int64_t)ctx->enum_bound;
+    fmpz* numerator = ctx->scratch_numerator;
+    fmpz* quotient = ctx->scratch_quotient;
+
+    const uint32_t next_depth = depth + 1;
+    for (uint32_t j = 0; j < ctx->dim && lo <= hi; ++j) {
+        const fmpz* row = fmpz_mat_entry(ctx->basis, depth, j);
+        const fmpz* current = fmpz_mat_entry(ctx->current, 0, j);
+        if (fmpz_is_zero(row)) {
+            if (fmpz_cmp(current, fmpz_mat_entry(ctx->fit_min, next_depth, j)) < 0 ||
+                fmpz_cmp(current, fmpz_mat_entry(ctx->fit_max, next_depth, j)) > 0) {
+                lo = 1;
+                hi = 0;
+            }
+            continue;
+        }
+
+        const int sign = fmpz_sgn(row);
+        const fmpz* min = sign > 0 ? fmpz_mat_entry(ctx->fit_min, next_depth, j)
+                                   : fmpz_mat_entry(ctx->fit_max, next_depth, j);
+        const fmpz* max = sign > 0 ? fmpz_mat_entry(ctx->fit_max, next_depth, j)
+                                   : fmpz_mat_entry(ctx->fit_min, next_depth, j);
+
+        fmpz_sub(numerator, min, current);
+        fmpz_cdiv_q(quotient, numerator, row);
+        if (fmpz_cmp_si(quotient, lo) > 0) {
+            if (fmpz_cmp_si(quotient, hi) > 0) {
+                lo = 1;
+                hi = 0;
+                break;
+            }
+            lo = fmpz_get_si(quotient);
+        }
+
+        fmpz_sub(numerator, max, current);
+        fmpz_fdiv_q(quotient, numerator, row);
+        if (fmpz_cmp_si(quotient, hi) < 0) {
+            if (fmpz_cmp_si(quotient, lo) < 0) {
+                lo = 1;
+                hi = 0;
+                break;
+            }
+            hi = fmpz_get_si(quotient);
+        }
+    }
+
+    *lower = lo;
+    *upper = hi;
+    return lo <= hi;
+}
+
+static bool _next_offset(
+    int64_t lower,
+    int64_t upper,
+    bool* zero_pending,
+    int64_t* positive,
+    int64_t* negative,
+    int64_t* offset
+) {
+    if (*zero_pending) {
+        *zero_pending = false;
+        *offset = 0;
+        return true;
+    }
+    if (*positive <= upper && (*negative < lower || *positive <= -*negative)) {
+        *offset = (*positive)++;
+        return true;
+    }
+    if (*negative >= lower) {
+        *offset = (*negative)--;
+        return true;
+    }
+    return false;
+}
+
 static void _search(enum_search_t* ctx, uint32_t depth) {
     if (ctx->found || ctx->hit_limit || ctx->interrupted) {
         return;
@@ -230,17 +309,25 @@ static void _search(enum_search_t* ctx, uint32_t depth) {
         return;
     }
 
+    int64_t lower, upper;
+    if (!_coefficient_bounds(ctx, depth, &lower, &upper)) {
+        return;
+    }
+
     const uint32_t next_depth = depth + 1;
+    bool zero_pending = lower <= 0 && upper >= 0;
+    int64_t positive = lower > 1 ? lower : 1;
+    int64_t negative = upper < -1 ? upper : -1;
     int64_t prev_off = 0;
+    int64_t off;
     if (next_depth == ctx->dim) {
-        for (uint64_t i = 0; i < ctx->width; ++i) {
-            const int64_t off = enumerate_offset_for_index(i);
+        while (_next_offset(lower, upper, &zero_pending, &positive, &negative, &off)) {
             _add_basis_row(ctx, depth, off - prev_off);
             prev_off = off;
 
             if (fnvcrack_interrupted()) {
                 ctx->interrupted = true;
-            } else if (_can_still_fit(ctx, next_depth)) {
+            } else {
                 _emit_candidate(ctx);
             }
 
@@ -254,14 +341,11 @@ static void _search(enum_search_t* ctx, uint32_t depth) {
         return;
     }
 
-    for (uint64_t i = 0; i < ctx->width; ++i) {
-        const int64_t off = enumerate_offset_for_index(i);
+    while (_next_offset(lower, upper, &zero_pending, &positive, &negative, &off)) {
         _add_basis_row(ctx, depth, off - prev_off);
         prev_off = off;
 
-        if (_can_still_fit(ctx, next_depth)) {
-            _search(ctx, next_depth);
-        }
+        _search(ctx, next_depth);
 
         if (ctx->found || ctx->hit_limit || ctx->interrupted) {
             _add_basis_row(ctx, depth, -prev_off);
@@ -372,16 +456,21 @@ enumerate_solver_result enumerate_bounded_mod(
         fmpz_mat_init(fit_max, n + 1, n);
         _build_tail_abs(tail_abs, reduced, enum_bound);
         _build_fit_bounds(fit_min, fit_max, tail_abs, lower_bounds, upper_bounds);
+        fmpz_t scratch_numerator, scratch_quotient;
+        fmpz_init(scratch_numerator);
+        fmpz_init(scratch_quotient);
         enum_search_t search_ctx = {
             .basis = reduced,
             .fit_min = fit_min,
             .fit_max = fit_max,
             .current = base,
+            .scratch_numerator = scratch_numerator,
+            .scratch_quotient = scratch_quotient,
             .cb = cb,
             .cb_ctx = cb_ctx,
             .deltas = deltas,
             .dim = (uint32_t)n,
-            .width = enumerate_search_width(enum_bound),
+            .enum_bound = enum_bound,
             .max_candidates = max_candidates,
         };
         if (_can_still_fit(&search_ctx, 0)) {
@@ -395,6 +484,8 @@ enumerate_solver_result enumerate_bounded_mod(
         } else if (search_ctx.hit_limit) {
             result = ENUMERATE_SOLVER_LIMIT;
         }
+        fmpz_clear(scratch_quotient);
+        fmpz_clear(scratch_numerator);
         fmpz_mat_clear(fit_max);
         fmpz_mat_clear(fit_min);
         fmpz_mat_clear(tail_abs);

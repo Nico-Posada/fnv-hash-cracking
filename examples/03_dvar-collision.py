@@ -60,7 +60,7 @@ if result.ok:
 # it takes a while but a solution is eventually found
 r"""
 hashed = 0xfc16f5bc05480e73
-Took 139.906241s
+Took 48.444066s
 result.ok = True
 collision = b'super_epic_fnvcrack_demo#y4n7yn7hfxqix'
 hashed == hash_dvar(collision) = True
