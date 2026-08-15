@@ -173,3 +173,9 @@ class ContextApiTestCase(unittest.TestCase):
         self.assertIn("CrackContext(", repr(lhs))
         self.assertIn("prefix=b'pre'", repr(lhs))
         self.assertIn("valid_chars=", repr(lhs))
+
+    def test_repr_uses_subclass_name(self):
+        class CustomContext(CrackContext):
+            pass
+
+        self.assertTrue(repr(CustomContext()).startswith("CustomContext("))

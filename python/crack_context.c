@@ -318,8 +318,9 @@ PyObject* CrackContext_repr(CrackContext* self) {
         goto finish;
 
     result = PyUnicode_FromFormat(
-        "CrackContext(prime=%R, offset_basis=%R, bit_length=%u, prefix=%R, "
+        "%s(prime=%R, offset_basis=%R, bit_length=%u, prefix=%R, "
         "suffix=%R, valid_chars=%R)",
+        Py_TYPE(self)->tp_name,
         prime,
         offset_basis,
         self->ctx->bits,
