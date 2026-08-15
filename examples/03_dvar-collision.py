@@ -2,8 +2,8 @@ from common import *
 import fnvcrack
 
 # Another cool feature is the ability to generate funny
-# collisions incredibly fast. An example is for Call of Duty dvars - 
-# the function to hash them is given below
+# collisions on constrained inputs. An example is for
+# Call of Duty dvars - the function to hash them is given below
 
 EXTRA = 'q6n-+7=tyytg94_*'
 def hash_dvar(dvar : str|bytes):
