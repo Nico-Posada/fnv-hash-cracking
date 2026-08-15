@@ -23,7 +23,6 @@ PyObject* CrackContext_get_prime(CrackContext* self, PyObject*);
 PyObject* CrackContext_get_offset_basis(CrackContext* self, PyObject*);
 PyObject* CrackContext_get_prefix(CrackContext* self, PyObject*);
 PyObject* CrackContext_get_suffix(CrackContext* self, PyObject*);
-PyObject* CrackContext_get_bit_length(CrackContext* self, PyObject*);
 PyObject* CrackContext_get_valid_chars(CrackContext* self, PyObject*);
 
 PyObject* CrackContext_richcompare(PyObject* v, PyObject* w, int op);

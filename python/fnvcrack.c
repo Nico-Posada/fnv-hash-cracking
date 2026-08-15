@@ -4,6 +4,7 @@
 #define PY_SSIZE_T_CLEAN
 #endif
 #include <Python.h>
+#include <structmember.h>
 #include <flint/fmpz.h>
 
 #include "context.h"
@@ -19,21 +20,20 @@
 // CrackContext //
 //////////////////
 
-// static PyMemberDef CrackContext_members[] = {
-//     // {"bit_length", Py_T_UINT, offsetof(CrackContext, ctx[0].bits), Py_READONLY, "Value used to calculate the
-//     modulus (2^bit_length)"}, {NULL}  /* Sentinel */
-// };
+static PyMemberDef CrackContext_members[] = {
+    {"bit_length",
+     T_UINT,
+     offsetof(CrackContext, ctx[0].bits),
+     READONLY,
+     PyDoc_STR("Value used to calculate the modulus (2 ^ bit_length)")},
+    {NULL} /* Sentinel */
+};
 
 static PyGetSetDef Custom_getsetters[] = {
     {"offset_basis", (getter)CrackContext_get_offset_basis, (setter)NULL, PyDoc_STR("Offset basis"), NULL},
     {"prime", (getter)CrackContext_get_prime, (setter)NULL, PyDoc_STR("Prime"), NULL},
     {"prefix", (getter)CrackContext_get_prefix, (setter)NULL, PyDoc_STR("Prefix"), NULL},
     {"suffix", (getter)CrackContext_get_suffix, (setter)NULL, PyDoc_STR("Suffix"), NULL},
-    {"bit_length",
-     (getter)CrackContext_get_bit_length,
-     (setter)NULL,
-     PyDoc_STR("Value used to calculate the modulus (2 ^ bit_length)"),
-     NULL},
     {"valid_chars",
      (getter)CrackContext_get_valid_chars,
      (setter)NULL,
@@ -60,7 +60,7 @@ PyTypeObject CrackContextType = {
     .tp_repr = (reprfunc)CrackContext_repr,
     // .tp_init = (initproc) CrackContext_init,
     .tp_dealloc = (destructor)CrackContext_dealloc,
-    // .tp_members = CrackContext_members,
+    .tp_members = CrackContext_members,
     .tp_methods = CrackContext_methods,
     .tp_getset = Custom_getsetters,
     .tp_richcompare = CrackContext_richcompare,

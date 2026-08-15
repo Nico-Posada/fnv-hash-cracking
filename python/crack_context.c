@@ -248,10 +248,6 @@ PyObject* CrackContext_get_suffix(CrackContext* self, PyObject* Py_UNUSED(ignore
     return _char_buffer_to_pyobj(get_suffix(self->ctx));
 }
 
-PyObject* CrackContext_get_bit_length(CrackContext* self, PyObject* Py_UNUSED(ignored)) {
-    return PyLong_FromUnsignedLong((unsigned long)self->ctx->bits);
-}
-
 PyObject* CrackContext_get_valid_chars(CrackContext* self, PyObject* Py_UNUSED(ignored)) {
     uint32_t bytes_needed = 0;
     uint8_t result[256];
