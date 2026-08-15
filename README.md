@@ -294,11 +294,12 @@ uv run --locked --group benchmark python benchmarking/bench.py perf \
 ```
 
 The Wheels workflow builds and tests CPython 3.11 through 3.14 on Linux,
-Windows, and macOS. The manylinux build consumes the committed native
-dependency lock. Regenerate it only when the FLINT specification changes:
+Windows, and macOS. The Linux and Windows wheel builds consume committed
+native dependency locks. Regenerate both only when the FLINT specification
+changes:
 
 ```bash
-make lock-manylinux
+make lock-native
 ```
 
 ## Building From Source

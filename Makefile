@@ -22,11 +22,11 @@ C_COVERAGE_SOURCES = $(filter-out src/main.c,$(SOURCES))
 OBJECTS = $(SOURCES:.c=.o)
 
 # Default target (runs when you just type 'make')
-.PHONY: all build clean clean-c-coverage build-pyext build-pyext-coverage coverage-c-probe coverage-c lock-manylinux
+.PHONY: all build clean clean-c-coverage build-pyext build-pyext-coverage coverage-c-probe coverage-c lock-native
 
 all: build
-lock-manylinux:
-	uvx --from 'conda-lock==4.0.2' conda-lock --check-input-hash -f pyproject.toml --lockfile manylinux.conda-lock.yml
+lock-native:
+	uvx --from 'conda-lock==4.0.2' conda-lock lock --file pyproject.toml --kind explicit --filename-template 'native-{platform}.conda.lock'
 
 build: $(TARGET)
 

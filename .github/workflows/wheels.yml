@@ -9,12 +9,6 @@ on:
     types:
       - published
   workflow_dispatch:
-    inputs:
-      cold-windows:
-        description: Build Windows dependencies without the binary cache
-        required: false
-        type: boolean
-        default: false
   schedule:
     - cron: "0 8 1 * *"
 
@@ -103,7 +97,7 @@ jobs:
             /tmp/bin/micromamba --no-rc create --yes \
               --root-prefix /tmp/micromamba-root \
               --prefix /opt/fnvcrack-deps \
-              --file {project}/manylinux.conda-lock.yml
+              --file {project}/native-linux-64.conda.lock
             test -f /opt/fnvcrack-deps/include/flint/flint.h
             test -f /opt/fnvcrack-deps/lib/libflint.so
             ldd_output="$(ldd /opt/fnvcrack-deps/lib/libflint.so)"
@@ -125,55 +119,26 @@ jobs:
     name: Windows AMD64 wheels
     runs-on: windows-2025-vs2026
     timeout-minutes: 120
-    env:
-      VCPKG_DEFAULT_BINARY_CACHE: ${{ github.workspace }}\.vcpkg-cache
-
     steps:
       - name: Check out repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
 
-      - name: Set vcpkg cache key
-        shell: pwsh
-        run: |
-          "VCPKG_CACHE_IMAGE=$env:ImageOS" |
-            Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
-          "VCPKG_CACHE_VERSION=$env:ImageVersion" |
-            Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
-
-      - name: Set up pinned vcpkg
-        shell: pwsh
-        run: |
-          $baseline = (Get-Content "$env:GITHUB_WORKSPACE\vcpkg.json" | ConvertFrom-Json).'builtin-baseline'
-          $vcpkgRoot = Join-Path $env:RUNNER_TEMP "vcpkg"
-          git clone --no-checkout https://github.com/microsoft/vcpkg.git $vcpkgRoot
-          git -C $vcpkgRoot checkout --detach $baseline
-          & "$vcpkgRoot\bootstrap-vcpkg.bat" -disableMetrics
-          "FNVCRACK_VCPKG_ROOT=$vcpkgRoot" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
-
-      - name: Cache vcpkg binaries
-        if: github.event_name != 'schedule' && inputs['cold-windows'] != true
-        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
-        with:
-          path: .vcpkg-cache
-          key: vcpkg-${{ runner.os }}-${{ runner.arch }}-${{ env.VCPKG_CACHE_IMAGE }}-${{ hashFiles('vcpkg.json', 'vcpkg-configuration.json', 'tools/vcpkg-ports/**') }}-${{ env.VCPKG_CACHE_VERSION }}
-          restore-keys: |
-            vcpkg-${{ runner.os }}-${{ runner.arch }}-${{ env.VCPKG_CACHE_IMAGE }}-${{ hashFiles('vcpkg.json', 'vcpkg-configuration.json', 'tools/vcpkg-ports/**') }}-
-
       - name: Install native dependencies
-        shell: pwsh
-        run: |
-          New-Item -ItemType Directory -Force $env:VCPKG_DEFAULT_BINARY_CACHE | Out-Null
-          & "$env:FNVCRACK_VCPKG_ROOT\vcpkg.exe" install `
-            "--triplet=x64-windows" `
-            "--x-manifest-root=$env:GITHUB_WORKSPACE" `
-            "--x-install-root=$env:FNVCRACK_VCPKG_ROOT\installed"
-          $deps = Join-Path $env:FNVCRACK_VCPKG_ROOT "installed\x64-windows"
-          "FNVCRACK_DEPS=$deps" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+        id: native-deps
+        uses: mamba-org/setup-micromamba@f457c30a868e4760d3a6fcea5f25dc655b8edf39 # v3.2.1
+        with:
+          environment-file: native-win-64.conda.lock
+          environment-name: fnvcrack-deps
+          micromamba-version: "2.9.0-0"
+          init-shell: none
+
 
       - name: Build wheels
         uses: pypa/cibuildwheel@1828c10ab37f080699c7b81cea34097c684a7074 # v4.2.0
+        env:
+          FNVCRACK_DEPS: ${{ steps.native-deps.outputs.environment-path }}/Library
         with:
           extras: uv
           output-dir: wheelhouse
