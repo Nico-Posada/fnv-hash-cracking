@@ -1,3 +1,4 @@
+import itertools
 import unittest
 
 from fnvcrack import CrackContext, CrackStatus
@@ -223,6 +224,24 @@ class CrackingStrategiesTestCase(CrackAssertionsMixin, unittest.TestCase):
         target = fnv(plaintext, offset_basis, prime, 8)
         result = ctx.crack(target, crack_len=2)
         self.assertCracked(result, target, ctx)
+
+    def test_small_width_bounds_keep_every_reachable_target(self):
+        allowed = b"\x01\x06"
+        ctx = CrackContext(
+            offset_basis=5,
+            prime=11,
+            bit_length=4,
+            prefix=b"\x0e",
+            suffix=b"\x0d",
+            valid_chars=allowed + b"\x11",
+        )
+
+        for unknown in itertools.product(allowed, repeat=3):
+            plaintext = ctx.prefix + bytes(unknown) + ctx.suffix
+            target = fnv(plaintext, ctx.offset_basis, ctx.prime, ctx.bit_length)
+            with self.subTest(unknown=unknown, target=target):
+                result = ctx.crack(target, crack_len=3, enum_bound=15)
+                self.assertCracked(result, target, ctx)
 
     def test_callback_rejects_then_accepts_verified_candidate(self):
         ctx = collision_context()

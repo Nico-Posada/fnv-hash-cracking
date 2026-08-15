@@ -121,52 +121,93 @@ inline static void _reverse_suffix_fmpz(
     fmpz_clear(inv_prime);
 }
 
-static uint32_t _valid_chars_list(const context_t ctx, uint8_t chars[256], uint8_t* max_char) {
-    uint32_t count = 0;
-    *max_char = 0;
-    for (uint32_t c = 0; c < 256; ++c) {
-        if (ctx->valid_chars[c]) {
-            chars[count++] = (uint8_t)c;
-            *max_char = (uint8_t)c;
-        }
-    }
-
-    return count;
-}
-
-static void _delta_bounds(
+static CrackResult _low_state_delta_bounds(
     const context_t ctx,
     int64_t* lower_bounds,
     int64_t* upper_bounds,
     const uint32_t delta_len,
-    const uint32_t state_low
+    const uint32_t start,
+    const uint32_t target,
+    const uint32_t prime
 ) {
+    const uint32_t q = (uint32_t)1 << (ctx->bits < 8 ? ctx->bits : 8);
+    const uint32_t mask = q - 1;
     uint8_t chars[256];
-    uint8_t max_char;
-    const uint32_t char_count = _valid_chars_list(ctx, chars, &max_char);
-    const int64_t lo = -(int64_t)max_char;
-    const int64_t hi = (int64_t)max_char;
+    uint32_t char_count = 0;
+    for (uint32_t c = 0; c < q; ++c) {
+        if (ctx->valid_chars[c]) {
+            chars[char_count++] = (uint8_t)c;
+        }
+    }
+
+    uint8_t* forward = calloc(((size_t)delta_len + 1) * q, sizeof(*forward));
+    if (!forward) {
+        return MEMORY_ERROR;
+    }
+    forward[start & mask] = 1;
 
     for (uint32_t i = 0; i < delta_len; ++i) {
-        lower_bounds[i] = lo;
-        upper_bounds[i] = hi;
+        uint8_t* current = forward + (size_t)i * q;
+        uint8_t* next = current + q;
+        for (uint32_t state = 0; state < q; ++state) {
+            if (!current[state]) {
+                continue;
+            }
+            for (uint32_t j = 0; j < char_count; ++j) {
+                next[((state ^ chars[j]) * prime) & mask] = 1;
+            }
+        }
+        if (fnvcrack_interrupted()) {
+            free(forward);
+            return INTERRUPTED;
+        }
     }
 
-    int64_t first_lo = 255;
-    int64_t first_hi = -255;
-    for (uint32_t j = 0; j < char_count; ++j) {
-        const uint32_t c = chars[j];
-        const int64_t delta = (int64_t)(state_low ^ c) - (int64_t)state_low;
-        if (delta < first_lo) {
-            first_lo = delta;
+    if (!forward[(size_t)delta_len * q + (target & mask)]) {
+        free(forward);
+        return FAILED;
+    }
+
+    uint8_t backward[256] = {0};
+    uint8_t previous[256];
+    backward[target & mask] = 1;
+    for (uint32_t i = delta_len; i > 0; --i) {
+        const uint8_t* reachable = forward + (size_t)(i - 1) * q;
+        int64_t lo = (int64_t)mask;
+        int64_t hi = -(int64_t)mask;
+        memset(previous, 0, q);
+
+        for (uint32_t state = 0; state < q; ++state) {
+            if (!reachable[state]) {
+                continue;
+            }
+            for (uint32_t j = 0; j < char_count; ++j) {
+                const uint32_t xored = state ^ chars[j];
+                if (!backward[(xored * prime) & mask]) {
+                    continue;
+                }
+                const int64_t delta = (int64_t)xored - (int64_t)state;
+                if (delta < lo) {
+                    lo = delta;
+                }
+                if (delta > hi) {
+                    hi = delta;
+                }
+                previous[state] = 1;
+            }
         }
-        if (delta > first_hi) {
-            first_hi = delta;
+
+        lower_bounds[i - 1] = lo;
+        upper_bounds[i - 1] = hi;
+        memcpy(backward, previous, q);
+        if (fnvcrack_interrupted()) {
+            free(forward);
+            return INTERRUPTED;
         }
     }
 
-    lower_bounds[0] = first_lo;
-    upper_bounds[0] = first_hi;
+    free(forward);
+    return SUCCESS;
 }
 
 static void _set_u64_coeffs(fmpz_mat_t coeffs, const uint64_t prime, const uint32_t nn) {
@@ -362,7 +403,12 @@ static CrackResult _crack_u64_with_len_enumerate(
         result = MEMORY_ERROR;
         goto cleanup;
     }
-    _delta_bounds(ctx, lower_bounds, upper_bounds, nn, new_hash & 0xff);
+    CrackResult bounds_result =
+        _low_state_delta_bounds(ctx, lower_bounds, upper_bounds, nn, new_hash, ntarget, prime);
+    if (bounds_result != SUCCESS) {
+        result = bounds_result;
+        goto cleanup;
+    }
     _set_u64_coeffs(coeffs, prime, nn);
 
     if (fnvcrack_interrupted()) {
@@ -544,13 +590,26 @@ static CrackResult _crack_fmpz_with_len_enumerate(
     fnv_fmpz_with_len_mask(new_hash, prefix, offset_basis, prime, bit_mask);
 
     if (nn != 0) {
+        const ulong low_mod = (ulong)1 << (bit_len < 8 ? bit_len : 8);
         lower_bounds = malloc((size_t)nn * sizeof(*lower_bounds));
         upper_bounds = malloc((size_t)nn * sizeof(*upper_bounds));
         if (!lower_bounds || !upper_bounds) {
             result = MEMORY_ERROR;
             goto cleanup;
         }
-        _delta_bounds(ctx, lower_bounds, upper_bounds, nn, fmpz_fdiv_ui(new_hash, 256));
+        CrackResult bounds_result = _low_state_delta_bounds(
+            ctx,
+            lower_bounds,
+            upper_bounds,
+            nn,
+            fmpz_fdiv_ui(new_hash, low_mod),
+            fmpz_fdiv_ui(ntarget, low_mod),
+            fmpz_fdiv_ui(prime, low_mod)
+        );
+        if (bounds_result != SUCCESS) {
+            result = bounds_result;
+            goto cleanup;
+        }
 
         _set_fmpz_coeffs(coeffs, prime, nn);
     }
