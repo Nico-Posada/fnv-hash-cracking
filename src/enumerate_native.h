@@ -2,19 +2,6 @@
 
 #include "enumerate.h"
 
-static inline uint64_t enumerate_search_width(uint32_t enum_bound) {
-    return (uint64_t)enum_bound * 2 + 1;
-}
-
-static inline int64_t enumerate_offset_for_index(uint64_t idx) {
-    if (idx == 0) {
-        return 0;
-    }
-
-    const int64_t value = (int64_t)((idx + 1) / 2);
-    return idx & 1 ? value : -value;
-}
-
 static inline bool enumerate_next_offset_internal(
     int64_t lower,
     int64_t upper,
