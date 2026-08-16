@@ -14,9 +14,7 @@ typedef struct {
     uint32_t enum_bound;
     uint64_t max_candidates;
     uint64_t candidates;
-    bool found;
-    bool hit_limit;
-    bool interrupted;
+    enumerate_solver_result result;
 } native_search_t;
 
 bool enumerate_native_transition_fits_internal(int64_t value, uint32_t enum_bound) {
@@ -43,9 +41,9 @@ static bool _can_still_fit(native_search_t* ctx, uint32_t depth) {
 static void _emit_candidate(native_search_t* ctx) {
     ++ctx->candidates;
     if (ctx->cb(ctx->current, ctx->dim, ctx->cb_ctx)) {
-        ctx->found = true;
+        ctx->result = ENUMERATE_SOLVER_FOUND;
     } else if (ctx->max_candidates != 0 && ctx->candidates >= ctx->max_candidates) {
-        ctx->hit_limit = true;
+        ctx->result = ENUMERATE_SOLVER_LIMIT;
     }
 }
 
@@ -160,11 +158,11 @@ static bool _next_offset(
 }
 
 static void _search(native_search_t* ctx, uint32_t depth) {
-    if (ctx->found || ctx->hit_limit || ctx->interrupted) {
+    if (ctx->result != ENUMERATE_SOLVER_DONE) {
         return;
     }
     if (fnvcrack_interrupted()) {
-        ctx->interrupted = true;
+        ctx->result = ENUMERATE_SOLVER_INTERRUPTED;
         return;
     }
 
@@ -185,12 +183,12 @@ static void _search(native_search_t* ctx, uint32_t depth) {
             prev_off = off;
 
             if (fnvcrack_interrupted()) {
-                ctx->interrupted = true;
+                ctx->result = ENUMERATE_SOLVER_INTERRUPTED;
             } else {
                 _emit_candidate(ctx);
             }
 
-            if (ctx->found || ctx->hit_limit || ctx->interrupted) {
+            if (ctx->result != ENUMERATE_SOLVER_DONE) {
                 _add_basis_row(ctx, depth, -prev_off);
                 return;
             }
@@ -206,7 +204,7 @@ static void _search(native_search_t* ctx, uint32_t depth) {
 
         _search(ctx, next_depth);
 
-        if (ctx->found || ctx->hit_limit || ctx->interrupted) {
+        if (ctx->result != ENUMERATE_SOLVER_DONE) {
             _add_basis_row(ctx, depth, -prev_off);
             return;
         }
@@ -323,6 +321,7 @@ bool enumerate_native_try(
         .cb_ctx = cb_ctx,
         .dim = dim,
         .max_candidates = max_candidates,
+        .result = ENUMERATE_SOLVER_DONE,
     };
     if (!_init_search(&ctx, basis, base, lower_bounds, upper_bounds, enum_bound)) {
         return false;
@@ -332,14 +331,7 @@ bool enumerate_native_try(
         _search(&ctx, 0);
     }
 
-    *result = ENUMERATE_SOLVER_DONE;
-    if (ctx.interrupted) {
-        *result = ENUMERATE_SOLVER_INTERRUPTED;
-    } else if (ctx.found) {
-        *result = ENUMERATE_SOLVER_FOUND;
-    } else if (ctx.hit_limit) {
-        *result = ENUMERATE_SOLVER_LIMIT;
-    }
+    *result = ctx.result;
     free(ctx.basis);
     return true;
 }

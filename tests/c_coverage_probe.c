@@ -308,11 +308,10 @@ static void check_native_transition_bounds(void) {
     assert(enumerate_native_transition_fits_internal(INT64_MIN, 0));
 }
 
-static bool count_candidate(const int64_t* deltas, uint32_t delta_len, void* userdata) {
+static bool accept_second_candidate(const int64_t* deltas, uint32_t delta_len, void* userdata) {
     (void)deltas;
     (void)delta_len;
-    ++*(uint64_t*)userdata;
-    return false;
+    return ++*(uint64_t*)userdata == 2;
 }
 
 static void check_enum_bound_width(void) {
@@ -332,9 +331,15 @@ static void check_enum_bound_width(void) {
     uint64_t candidates = 0;
     enumerate_solver_result result;
     assert(enumerate_native_try(
-        basis, base, lower_bounds, upper_bounds, DIM, UINT32_C(1) << 31, 2, count_candidate, &candidates, &result
+        basis, base, lower_bounds, upper_bounds, DIM, UINT32_C(1) << 31, 1, accept_second_candidate, &candidates, &result
     ));
     assert(result == ENUMERATE_SOLVER_LIMIT);
+    assert(candidates == 1);
+    candidates = 0;
+    assert(enumerate_native_try(
+        basis, base, lower_bounds, upper_bounds, DIM, UINT32_C(1) << 31, 2, accept_second_candidate, &candidates, &result
+    ));
+    assert(result == ENUMERATE_SOLVER_FOUND);
     assert(candidates == 2);
 
     fmpz_mat_clear(base);
@@ -351,8 +356,15 @@ static void check_enum_bound_width(void) {
     candidates = 0;
     assert(
         enumerate_bounded_mod(
-            coeffs, rhs, modulus, &lower_bound, &upper_bound, UINT32_C(1) << 31, 2, count_candidate, &candidates
+            coeffs, rhs, modulus, &lower_bound, &upper_bound, UINT32_C(1) << 31, 1, accept_second_candidate, &candidates
         ) == ENUMERATE_SOLVER_LIMIT
+    );
+    assert(candidates == 1);
+    candidates = 0;
+    assert(
+        enumerate_bounded_mod(
+            coeffs, rhs, modulus, &lower_bound, &upper_bound, UINT32_C(1) << 31, 2, accept_second_candidate, &candidates
+        ) == ENUMERATE_SOLVER_FOUND
     );
     assert(candidates == 2);
     fmpz_clear(modulus);

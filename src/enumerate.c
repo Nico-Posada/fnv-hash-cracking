@@ -20,9 +20,7 @@ typedef struct {
     uint32_t enum_bound;
     uint64_t max_candidates;
     uint64_t candidates;
-    bool found;
-    bool hit_limit;
-    bool interrupted;
+    enumerate_solver_result result;
 } enum_search_t;
 
 static void _mat_row_mul(fmpz_mat_t out, const fmpz_mat_t row, const fmpz_mat_t M) {
@@ -197,9 +195,9 @@ static void _emit_candidate(enum_search_t* ctx) {
 
     ++ctx->candidates;
     if (ctx->cb(ctx->deltas, ctx->dim, ctx->cb_ctx)) {
-        ctx->found = true;
+        ctx->result = ENUMERATE_SOLVER_FOUND;
     } else if (ctx->max_candidates != 0 && ctx->candidates >= ctx->max_candidates) {
-        ctx->hit_limit = true;
+        ctx->result = ENUMERATE_SOLVER_LIMIT;
     }
 }
 
@@ -301,11 +299,11 @@ static bool _next_offset(
 }
 
 static void _search(enum_search_t* ctx, uint32_t depth) {
-    if (ctx->found || ctx->hit_limit || ctx->interrupted) {
+    if (ctx->result != ENUMERATE_SOLVER_DONE) {
         return;
     }
     if (fnvcrack_interrupted()) {
-        ctx->interrupted = true;
+        ctx->result = ENUMERATE_SOLVER_INTERRUPTED;
         return;
     }
 
@@ -326,12 +324,12 @@ static void _search(enum_search_t* ctx, uint32_t depth) {
             prev_off = off;
 
             if (fnvcrack_interrupted()) {
-                ctx->interrupted = true;
+                ctx->result = ENUMERATE_SOLVER_INTERRUPTED;
             } else {
                 _emit_candidate(ctx);
             }
 
-            if (ctx->found || ctx->hit_limit || ctx->interrupted) {
+            if (ctx->result != ENUMERATE_SOLVER_DONE) {
                 _add_basis_row(ctx, depth, -prev_off);
                 return;
             }
@@ -347,7 +345,7 @@ static void _search(enum_search_t* ctx, uint32_t depth) {
 
         _search(ctx, next_depth);
 
-        if (ctx->found || ctx->hit_limit || ctx->interrupted) {
+        if (ctx->result != ENUMERATE_SOLVER_DONE) {
             _add_basis_row(ctx, depth, -prev_off);
             return;
         }
@@ -472,18 +470,13 @@ enumerate_solver_result enumerate_bounded_mod(
             .dim = (uint32_t)n,
             .enum_bound = enum_bound,
             .max_candidates = max_candidates,
+            .result = ENUMERATE_SOLVER_DONE,
         };
         if (_can_still_fit(&search_ctx, 0)) {
             _search(&search_ctx, 0);
         }
 
-        if (search_ctx.interrupted) {
-            result = ENUMERATE_SOLVER_INTERRUPTED;
-        } else if (search_ctx.found) {
-            result = ENUMERATE_SOLVER_FOUND;
-        } else if (search_ctx.hit_limit) {
-            result = ENUMERATE_SOLVER_LIMIT;
-        }
+        result = search_ctx.result;
         fmpz_clear(scratch_quotient);
         fmpz_clear(scratch_numerator);
         fmpz_mat_clear(fit_max);
