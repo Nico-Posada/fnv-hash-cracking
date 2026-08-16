@@ -286,7 +286,7 @@ static bool _deltas_to_bytes_fmpz(
 }
 
 typedef struct {
-    context_t ctx;
+    const struct _context_s* ctx;
     uint64_t target;
     uint64_t new_hash;
     uint64_t prime;
@@ -297,7 +297,6 @@ typedef struct {
     crack_candidate_cb callback;
     void* userdata;
     char* ret_buf;
-    uint32_t delta_len;
     bool memory_error;
 } enum_u64_cb_ctx_t;
 
@@ -317,7 +316,7 @@ static bool _enum_u64_candidate(const int64_t* deltas, uint32_t delta_len, void*
 
     return _handle_candidate(
         cb_ctx->prefix,
-        (char_buffer){cb_ctx->ret_buf, cb_ctx->delta_len},
+        (char_buffer){cb_ctx->ret_buf, delta_len},
         cb_ctx->suffix,
         cb_ctx->out_buffer,
         cb_ctx->callback,
@@ -422,7 +421,7 @@ static CrackResult _crack_u64_with_len_enumerate(
     fmpz_mod(rhs, rhs, MOD);
 
     enum_u64_cb_ctx_t cb_ctx = {
-        .ctx = {ctx[0]},
+        .ctx = ctx,
         .target = target,
         .new_hash = new_hash,
         .prime = prime,
@@ -433,7 +432,6 @@ static CrackResult _crack_u64_with_len_enumerate(
         .callback = callback,
         .userdata = userdata,
         .ret_buf = ret_buf,
-        .delta_len = nn,
         .memory_error = false,
     };
 
@@ -467,7 +465,7 @@ cleanup:
 }
 
 typedef struct {
-    context_t ctx;
+    const struct _context_s* ctx;
     const fmpz* target;
     const fmpz* new_hash;
     const fmpz* prime;
@@ -479,7 +477,6 @@ typedef struct {
     crack_candidate_cb callback;
     void* userdata;
     char* ret_buf;
-    uint32_t delta_len;
     bool memory_error;
     fmpz_t hash;
     fmpz_t state;
@@ -518,7 +515,7 @@ static bool _enum_fmpz_candidate(const int64_t* deltas, uint32_t delta_len, void
 
     return _handle_candidate(
         cb_ctx->prefix,
-        (char_buffer){cb_ctx->ret_buf, cb_ctx->delta_len},
+        (char_buffer){cb_ctx->ret_buf, delta_len},
         cb_ctx->suffix,
         cb_ctx->out_buffer,
         cb_ctx->callback,
@@ -641,7 +638,7 @@ static CrackResult _crack_fmpz_with_len_enumerate(
     fmpz_mod(rhs, rhs, MOD);
 
     enum_fmpz_cb_ctx_t cb_ctx = {
-        .ctx = {ctx[0]},
+        .ctx = ctx,
         .target = target,
         .new_hash = new_hash,
         .prime = prime,
@@ -653,7 +650,6 @@ static CrackResult _crack_fmpz_with_len_enumerate(
         .callback = callback,
         .userdata = userdata,
         .ret_buf = ret_buf,
-        .delta_len = nn,
         .memory_error = false,
     };
     fmpz_init(cb_ctx.hash);
