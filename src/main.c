@@ -5,7 +5,6 @@
 #include <flint/fmpz.h>
 
 #include "context.h"
-#include "inverse.h"
 #include "fnv.h"
 #include "crack.h"
 #include "interrupt.h"

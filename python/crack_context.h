@@ -15,7 +15,6 @@ typedef struct {
 extern PyTypeObject CrackContextType;
 extern PyObject* CrackException;
 
-int CrackContext_traverse(CrackContext* self, visitproc visit, void* arg);
 void CrackContext_dealloc(CrackContext* self);
 PyObject* CrackContext_new(PyTypeObject* type, PyObject* args, PyObject* kwds);
 

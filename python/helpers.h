@@ -155,8 +155,14 @@ inline static bool _ensure_uint_pylong_arg_fits(PyObject* obj, const char* const
 
     return true;
 }
-static int
-_parse_uint32_arg(PyObject* obj, const char* const argname, uint32_t* result, bool optional, uint32_t default_val) {
+static int _parse_uint64_arg_width(
+    PyObject* obj,
+    const char* const argname,
+    uint64_t* result,
+    bool optional,
+    uint64_t default_val,
+    uint32_t bits
+) {
     if (obj == NULL || Py_IsNone(obj)) {
         if (!optional) {
             if (Py_IsNone(obj)) {
@@ -177,43 +183,7 @@ _parse_uint32_arg(PyObject* obj, const char* const argname, uint32_t* result, bo
         return 0;
     }
 
-    if (!_ensure_uint_pylong_arg_fits(obj, argname, 32)) {
-        return 0;
-    }
-
-    unsigned long long temp_val = PyLong_AsUnsignedLongLong(obj);
-    if (temp_val == (unsigned long long)-1 && PyErr_Occurred()) {
-        return 0;
-    }
-
-    *result = (uint32_t)temp_val;
-    return 1;
-}
-#define _parse_uint32_arg(obj, result, optional, default) _parse_uint32_arg(obj, &(#result)[1], result, optional, default)
-
-static int
-_parse_uint64_arg(PyObject* obj, const char* const argname, uint64_t* result, bool optional, uint64_t default_val) {
-    if (obj == NULL || Py_IsNone(obj)) {
-        if (!optional) {
-            if (Py_IsNone(obj)) {
-                goto bad_arg;
-            }
-
-            PyErr_Format(PyExc_TypeError, "Missing argument value for %s", argname);
-            return 0;
-        }
-
-        *result = default_val;
-        return 2;
-    }
-
-    if (!PyLong_CheckExact(obj)) {
-    bad_arg:
-        PyErr_Format(PyExc_TypeError, "%s must be an int, got '%.200s'", argname, Py_TYPE(obj)->tp_name);
-        return 0;
-    }
-
-    if (!_ensure_uint_pylong_arg_fits(obj, argname, 64)) {
+    if (!_ensure_uint_pylong_arg_fits(obj, argname, bits)) {
         return 0;
     }
 
@@ -225,7 +195,19 @@ _parse_uint64_arg(PyObject* obj, const char* const argname, uint64_t* result, bo
     *result = (uint64_t)temp_val;
     return 1;
 }
-#define _parse_uint64_arg(obj, result, optional, default) _parse_uint64_arg(obj, &(#result)[1], result, optional, default)
+#define _parse_uint64_arg(obj, result, optional, default)                                                           \
+    _parse_uint64_arg_width(obj, &(#result)[1], result, optional, default, 64)
+
+static int
+_parse_uint32_arg(PyObject* obj, const char* const argname, uint32_t* result, bool optional, uint32_t default_val) {
+    uint64_t value;
+    int parsed = _parse_uint64_arg_width(obj, argname, &value, optional, default_val, 32);
+    if (parsed) {
+        *result = (uint32_t)value;
+    }
+    return parsed;
+}
+#define _parse_uint32_arg(obj, result, optional, default) _parse_uint32_arg(obj, &(#result)[1], result, optional, default)
 
 static int _parse_bool_arg(PyObject* obj, const char* const argname, bool* result) {
     if (!PyBool_Check(obj)) {

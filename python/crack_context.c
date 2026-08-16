@@ -36,10 +36,6 @@ void CrackContext_dealloc(CrackContext* self) {
     Py_TYPE(self)->tp_free((PyObject*)self);
 }
 
-int CrackContext_traverse(CrackContext* self, visitproc visit, void* arg) {
-    return 0;
-}
-
 #define GET_BUFFER_OBJ_SAFE(arg, view, err)                                                                            \
     if (arg == NULL || Py_IsNone(arg)) {                                                                               \
         view.buf = NULL;                                                                                               \
