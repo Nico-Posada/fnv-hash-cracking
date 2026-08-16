@@ -274,30 +274,6 @@ static bool _coefficient_bounds(enum_search_t* ctx, uint32_t depth, int64_t* low
     return lo <= hi;
 }
 
-static bool _next_offset(
-    int64_t lower,
-    int64_t upper,
-    bool* zero_pending,
-    int64_t* positive,
-    int64_t* negative,
-    int64_t* offset
-) {
-    if (*zero_pending) {
-        *zero_pending = false;
-        *offset = 0;
-        return true;
-    }
-    if (*positive <= upper && (*negative < lower || *positive <= -*negative)) {
-        *offset = (*positive)++;
-        return true;
-    }
-    if (*negative >= lower) {
-        *offset = (*negative)--;
-        return true;
-    }
-    return false;
-}
-
 static void _search(enum_search_t* ctx, uint32_t depth) {
     if (ctx->result != ENUMERATE_SOLVER_DONE) {
         return;
@@ -319,7 +295,7 @@ static void _search(enum_search_t* ctx, uint32_t depth) {
     int64_t prev_off = 0;
     int64_t off;
     if (next_depth == ctx->dim) {
-        while (_next_offset(lower, upper, &zero_pending, &positive, &negative, &off)) {
+        while (enumerate_next_offset_internal(lower, upper, &zero_pending, &positive, &negative, &off)) {
             _add_basis_row(ctx, depth, off - prev_off);
             prev_off = off;
 
@@ -339,7 +315,7 @@ static void _search(enum_search_t* ctx, uint32_t depth) {
         return;
     }
 
-    while (_next_offset(lower, upper, &zero_pending, &positive, &negative, &off)) {
+    while (enumerate_next_offset_internal(lower, upper, &zero_pending, &positive, &negative, &off)) {
         _add_basis_row(ctx, depth, off - prev_off);
         prev_off = off;
 
