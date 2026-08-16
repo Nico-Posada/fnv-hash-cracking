@@ -415,8 +415,7 @@ enumerate_solver_result enumerate_bounded_mod(
 
     _sort_rows_desc(reduced);
 
-    if (n < 8 ||
-        !enumerate_native_try(
+    if (!enumerate_native_try(
             reduced, base, lower_bounds, upper_bounds, (uint32_t)n, enum_bound, max_candidates, cb, cb_ctx, &result
         )) {
         int64_t* deltas = malloc((size_t)n * sizeof(*deltas));
