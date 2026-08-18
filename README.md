@@ -1,6 +1,6 @@
 # fnv-hash-cracking
 
-[![Wheels](https://github.com/Nico-Posada/fnv-hash-cracking/actions/workflows/wheels.yml/badge.svg)](https://github.com/Nico-Posada/fnv-hash-cracking/actions/workflows/wheels.yml)
+[![Wheels](https://github.com/Nico-Posada/fnv-hash-cracking/actions/workflows/wheels.yml/badge.svg)](https://github.com/Nico-Posada/fnv-hash-cracking/actions/workflows/wheels.yml) [![Python 3.11-3.14](https://img.shields.io/badge/python-3.11%20%7C%203.12%20%7C%203.13%20%7C%203.14-blue.svg)](https://www.python.org/downloads/)
 
 Crack hashes or find collisions for data hashed with the
 [FNV-1a](https://en.wikipedia.org/wiki/Fowler%E2%80%93Noll%E2%80%93Vo_hash_function#FNV-1a_hash)
@@ -18,14 +18,13 @@ known FNV-1a parameters.
 
 Huge thank you to [Connor McCartney](https://connor-mccartney.github.io) for
 his [writeup](https://connor-mccartney.github.io/cryptography/other/Trying-to-crack-COD-FNV-hashes)
-and the original Python proof of concept on which this project is based.
+and the original Python proof of concept on which this project is based. I'd also
+like to thank Blupper for his work on [linineq](https://github.com/TheBlupper/linineq)
+as a lot of the ideas from that are used here as well.
 
 ## Requirements
 
-The Python package supports Python 3.11, 3.12, 3.13, and 3.14.
-
-Prebuilt wheels include the native libraries required by `fnvcrack` and are
-available for:
+The Python package supports Python 3.11, 3.12, 3.13, 3.14, and the following:
 
 - Linux x86_64
 - Windows AMD64
@@ -34,21 +33,16 @@ available for:
 
 ## Installation
 
-Install the package from PyPI with pip:
+Install the package using pip or your package manager of choice (as long as it can
+pull from PyPI)
 
 ```bash
 pip install fnvcrack
 ```
 
-Or add it to a uv project:
-
-```bash
-uv add fnvcrack
-```
-
 ### Examples
 
-The Python package provides a high-level API for standard and custom FNV-1a
+The Python package provides an easy to use API for standard and custom FNV-1a
 hashes.
 
 More runnable demos are available in the [`examples/`](examples/) directory.
@@ -60,6 +54,8 @@ from fnvcrack import CrackContext
 
 target_hash = 0x25DA8C1836A8D66D
 ctx = CrackContext(valid_chars=b"abcdefghijklmnopqrstuvwxyz")
+# `crack_len` is the number of unknown bytes. Known prefixes
+# and suffixes do not count toward it.
 result = ctx.crack(target_hash, crack_len=8)
 
 if result.ok:
@@ -72,8 +68,6 @@ This prints:
 b'abcdefgh'
 ```
 
-`crack_len` is the number of unknown bytes. Known prefixes and suffixes do not
-count toward it.
 
 #### Known Prefixes and Suffixes
 
@@ -88,10 +82,8 @@ result = ctx.crack(target_hash, crack_len=8)
 
 #### Unknown Length
 
-Set `incremental=True` to search every unknown length from 1 through
-`crack_len`:
-
 ```python
+# Set `incremental=True` to search every unknown length from 1 through `crack_len`
 result = ctx.crack(target_hash, crack_len=12, incremental=True)
 ```
 
@@ -108,9 +100,6 @@ result = ctx.crack(
     max_enum_candidates=1_000_000,
 )
 ```
-
-`max_enum_candidates=0` means unlimited. Setting `valid_chars=None` allows all
-256 byte values, including NUL bytes.
 
 #### Inspecting Multiple Matches
 
@@ -221,39 +210,6 @@ int main(void) {
     return status == SUCCESS ? 0 : 1;
 }
 ```
-
-### C API Overview
-
-#### Context Management
-
-- `init_crack_ctx()` initializes a context for 64-bit FNV-1a.
-- `init_crack_fmpz_ctx()` initializes an arbitrary-precision context.
-- The corresponding `_with_len()` initializers accept binary-safe buffers.
-- `destroy_crack_ctx()` releases context resources.
-
-#### Cracking Functions
-
-- `crack_u64_with_len()` cracks a 64-bit hash with a known total length.
-- `crack_u64()` searches 64-bit hashes across a range of total lengths.
-- `crack_fmpz_with_len()` cracks an arbitrary-precision hash with a known
-  total length.
-- `crack_fmpz()` searches arbitrary-precision hashes across a range of total
-  lengths.
-- The corresponding `_limits()` functions accept custom enumeration limits.
-- `crack_u64_with_len_callback_limits()` and
-  `crack_fmpz_with_len_callback_limits()` add callbacks to fixed-length
-  searches.
-- `crack_u64_callback_limits()` and `crack_fmpz_callback_limits()` add
-  callbacks to incremental-length searches.
-
-The callback receives a complete verified `char_buffer`, including any prefix
-and suffix. Its data is borrowed and valid only during the callback. Returning
-true accepts the candidate and transfers its allocation to `out_buffer`;
-returning false rejects it, frees it, and continues enumeration.
-
-
-Unlike Python's `crack_len`, C `expected_len` and `max_search_len` include the
-known prefix and suffix.
 
 ## How It Works
 
