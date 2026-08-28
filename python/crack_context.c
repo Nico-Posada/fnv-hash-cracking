@@ -73,7 +73,16 @@ PyObject* CrackContext_new(PyTypeObject* type, PyObject* args, PyObject* kwds) {
     }
 
     if (!PyArg_ParseTupleAndKeywords(
-            args, kwds, "|OOOOOO", kwlist, &offset_basis, &prime, &bit_length, &prefix, &suffix, &valid_chars
+            args,
+            kwds,
+            "|$OOOOOO:NativeContext",
+            kwlist,
+            &offset_basis,
+            &prime,
+            &bit_length,
+            &prefix,
+            &suffix,
+            &valid_chars
         )) {
         Py_DECREF(self);
         return NULL;

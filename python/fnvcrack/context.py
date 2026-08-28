@@ -31,18 +31,15 @@ class CrackContext(_fnvcrack.NativeContext):
 
     __slots__ = ()
 
-    def __reduce__(self) -> tuple[type, tuple[int, int, int, bytes, bytes, bytes]]:
-        return (
-            type(self),
-            (
-                self.offset_basis,
-                self.prime,
-                self.bit_length,
-                self.prefix,
-                self.suffix,
-                self.valid_chars,
-            ),
-        )
+    def __getnewargs_ex__(self) -> tuple[tuple[()], dict[str, int | bytes]]:
+        return (), {
+            "offset_basis": self.offset_basis,
+            "prime": self.prime,
+            "bit_length": self.bit_length,
+            "prefix": self.prefix,
+            "suffix": self.suffix,
+            "valid_chars": self.valid_chars,
+        }
 
     def crack(
         self,

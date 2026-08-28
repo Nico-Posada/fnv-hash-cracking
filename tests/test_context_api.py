@@ -1,3 +1,5 @@
+import multiprocessing
+import pickle
 import unittest
 
 from fnvcrack import (
@@ -8,13 +10,35 @@ from fnvcrack import (
 )
 from fnvcrack._fnvcrack import NativeContext
 
-from conftest import FULL_BYTES, LOWER
+from conftest import FULL_BYTES, LOWER, fnv
 
 
 class ContextApiTestCase(unittest.TestCase):
     def test_native_context_subclass(self):
         self.assertTrue(issubclass(CrackContext, NativeContext))
         self.assertFalse(hasattr(CrackContext(), "_native"))
+
+    def test_constructor_arguments_are_keyword_only(self):
+        for context_type in (NativeContext, CrackContext):
+            with self.subTest(context_type=context_type):
+                with self.assertRaises(TypeError):
+                    context_type(None)
+
+    def test_pickle_round_trip(self):
+        ctx = CrackContext(prefix=b"pre", suffix=b"suf", valid_chars=b"abc")
+
+        restored = pickle.loads(pickle.dumps(ctx))
+
+        self.assertIs(type(restored), CrackContext)
+        self.assertEqual(restored, ctx)
+
+    def test_spawn_pool_pickles_context(self):
+        ctx = CrackContext(valid_chars=b"a")
+
+        with multiprocessing.get_context("spawn").Pool(1) as pool:
+            [result] = pool.starmap(ctx.crack, [(fnv(b"a"), 1)])
+
+        self.assertEqual(result.value, b"a")
 
     def test_imports_and_defaults(self):
         ctx = CrackContext()
