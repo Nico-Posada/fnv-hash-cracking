@@ -69,6 +69,16 @@ If you do not know the length, enable incremental search:
 result = ctx.crack(target_hash, crack_len=12, incremental=True)
 ```
 
+Set `threads` above `1` to enumerate one shared lattice with native workers:
+
+```python
+result = ctx.crack(target_hash, crack_len=12, threads=4)
+```
+
+The default is `threads=1`. The value is a maximum worker count for one shared
+lattice enumeration per exact search length. Short searches can be slower due
+to worker and scheduling overhead.
+
 Tune enumeration when you want a wider local search:
 
 ```python
@@ -101,6 +111,9 @@ the configured prefix and suffix. With no callback, `crack()` keeps its
 first-match behavior. Returning false every time runs until bounded exhaustion
 and returns `CrackResult(FAILED, None)` even though `matches` contains every
 offered result.
+
+With multiple threads, callback calls are fully serialized even if a callback
+releases the GIL. Candidate order is unspecified.
 
 ## API
 

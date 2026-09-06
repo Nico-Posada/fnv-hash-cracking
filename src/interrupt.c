@@ -4,6 +4,7 @@
 #include <signal.h>
 #include <stddef.h>
 #include <stdint.h>
+#include <stdlib.h>
 #include <string.h>
 
 #ifdef FNVCRACK_PYTHON_EXTENSION
@@ -16,6 +17,21 @@ static void fnvcrack_sigint_handler(int sig);
 #include <windows.h>
 
 typedef void (*signal_handler_t)(int);
+struct fnvcrack_cancel_token {
+    volatile LONG requested;
+};
+
+static void init_cancel_token(fnvcrack_cancel_token* token) {
+    token->requested = 0;
+}
+
+static void request_cancel(fnvcrack_cancel_token* token) {
+    (void)InterlockedExchange(&token->requested, 1);
+}
+
+static bool cancel_requested(const fnvcrack_cancel_token* token) {
+    return InterlockedCompareExchange((volatile LONG*)&token->requested, 0, 0) != 0;
+}
 
 static volatile LONG interrupt_requested = 0;
 static volatile LONG lifecycle_lock = 0;
@@ -40,14 +56,12 @@ static bool interrupted(void) {
 
 static void rearm_interrupt_handler(void) {
     signal_handler_t displaced = signal(SIGINT, fnvcrack_sigint_handler);
-    if (displaced != SIG_ERR
-        && displaced != SIG_DFL
-        && displaced != fnvcrack_sigint_handler) {
+    if (displaced != SIG_ERR && displaced != SIG_DFL && displaced != fnvcrack_sigint_handler) {
         (void)signal(SIGINT, displaced);
     }
 }
 
-static int owns_interrupt_handler(bool *owns_handler) {
+static int owns_interrupt_handler(bool* owns_handler) {
     signal_handler_t current = signal(SIGINT, SIG_GET);
     if (current == SIG_ERR) {
         return -1;
@@ -82,6 +96,21 @@ static void clear_saved_interrupt_handler(void) {
 #if ATOMIC_INT_LOCK_FREE != 2
 #error "fnvcrack requires always-lock-free atomic integers"
 #endif
+struct fnvcrack_cancel_token {
+    atomic_int requested;
+};
+
+static void init_cancel_token(fnvcrack_cancel_token* token) {
+    atomic_init(&token->requested, 0);
+}
+
+static void request_cancel(fnvcrack_cancel_token* token) {
+    atomic_store_explicit(&token->requested, 1, memory_order_relaxed);
+}
+
+static bool cancel_requested(const fnvcrack_cancel_token* token) {
+    return atomic_load_explicit(&token->requested, memory_order_relaxed) != 0;
+}
 
 static atomic_int interrupt_requested = ATOMIC_VAR_INIT(0);
 static atomic_flag lifecycle_lock = ATOMIC_FLAG_INIT;
@@ -97,11 +126,7 @@ static void unlock_lifecycle(void) {
 }
 
 static void set_interrupted(bool interrupted) {
-    atomic_store_explicit(
-        &interrupt_requested,
-        interrupted ? 1 : 0,
-        memory_order_relaxed
-    );
+    atomic_store_explicit(&interrupt_requested, interrupted ? 1 : 0, memory_order_relaxed);
 }
 
 static bool interrupted(void) {
@@ -111,12 +136,11 @@ static bool interrupted(void) {
 static void rearm_interrupt_handler(void) {
 }
 
-static bool action_owns_interrupt_handler(const struct sigaction *action) {
-    return (action->sa_flags & SA_SIGINFO) == 0
-        && action->sa_handler == fnvcrack_sigint_handler;
+static bool action_owns_interrupt_handler(const struct sigaction* action) {
+    return (action->sa_flags & SA_SIGINFO) == 0 && action->sa_handler == fnvcrack_sigint_handler;
 }
 
-static int owns_interrupt_handler(bool *owns_handler) {
+static int owns_interrupt_handler(bool* owns_handler) {
     struct sigaction current_action;
     if (sigaction(SIGINT, NULL, &current_action) != 0) {
         return -1;
@@ -146,6 +170,40 @@ static void clear_saved_interrupt_handler(void) {
 }
 
 #endif
+
+#ifdef _MSC_VER
+#define FNVCRACK_THREAD_LOCAL __declspec(thread)
+#else
+#define FNVCRACK_THREAD_LOCAL _Thread_local
+#endif
+
+static FNVCRACK_THREAD_LOCAL const fnvcrack_cancel_token* thread_cancel_token;
+
+fnvcrack_cancel_token* fnvcrack_cancel_token_new(void) {
+    fnvcrack_cancel_token* token = malloc(sizeof(*token));
+    if (token) {
+        init_cancel_token(token);
+    }
+    return token;
+}
+
+void fnvcrack_cancel_token_free(fnvcrack_cancel_token* token) {
+    free(token);
+}
+
+void fnvcrack_cancel_token_request(fnvcrack_cancel_token* token) {
+    request_cancel(token);
+}
+
+void fnvcrack_set_thread_cancel_token(const fnvcrack_cancel_token* token) {
+    thread_cancel_token = token;
+}
+
+const fnvcrack_cancel_token* fnvcrack_get_thread_cancel_token(void) {
+    return thread_cancel_token;
+}
+
+#undef FNVCRACK_THREAD_LOCAL
 
 static size_t lease_count = 0;
 static bool handler_installed = false;
@@ -185,7 +243,7 @@ static int finish_final_restore(void) {
 }
 
 bool fnvcrack_interrupted(void) {
-    return interrupted();
+    return interrupted() || (thread_cancel_token && cancel_requested(thread_cancel_token));
 }
 
 int fnvcrack_install_interrupt_handler(void) {

@@ -1,4 +1,6 @@
 import itertools
+import threading
+import time
 import unittest
 
 from fnvcrack import CrackContext, CrackStatus
@@ -90,12 +92,17 @@ class CrackingStrategiesTestCase(CrackAssertionsMixin, unittest.TestCase):
         result = ctx.crack(target, crack_len=4)
         self.assertEqual(result.value, plaintext)
         self.assertCracked(result, target, ctx)
+        threaded = ctx.crack(target, crack_len=4, threads=4)
+        self.assertEqual(threaded.value, plaintext)
+        self.assertCracked(threaded, target, ctx)
 
     def test_exact_known_string_with_zero_unknown_length(self):
         plaintext = b"prefixsuffix"
         ctx = CrackContext(prefix=b"prefix", suffix=b"suffix")
         result = ctx.crack(fnv(plaintext), crack_len=0)
         self.assertEqual(result.value, plaintext)
+        threaded = ctx.crack(fnv(plaintext), crack_len=0, threads=4)
+        self.assertEqual(threaded.value, plaintext)
 
     def test_wrong_hash_for_known_string_fails_without_output(self):
         ctx = CrackContext(prefix=b"prefix", suffix=b"suffix")
@@ -120,6 +127,33 @@ class CrackingStrategiesTestCase(CrackAssertionsMixin, unittest.TestCase):
         ctx = CrackContext(valid_chars=LOWER)
         target = fnv(plaintext)
         result = ctx.crack(target, crack_len=8, incremental=True)
+        self.assertEqual(result.value, plaintext)
+
+    def test_threaded_prefix_suffix_crack(self):
+        plaintext = b"preabcsuf"
+        ctx = CrackContext(prefix=b"pre", suffix=b"suf", valid_chars=LOWER)
+        target = fnv(plaintext)
+
+        result = ctx.crack(target, crack_len=3, threads=4)
+
+        self.assertCracked(result, target, ctx)
+
+    def test_threaded_incremental_finds_shorter_match(self):
+        plaintext = b"abc"
+        ctx = CrackContext(valid_chars=LOWER)
+        target = fnv(plaintext)
+
+        result = ctx.crack(target, crack_len=8, incremental=True, threads=4)
+
+        self.assertEqual(result.value, plaintext)
+
+    def test_threaded_single_character_charset(self):
+        plaintext = b"aaaa"
+        ctx = CrackContext(valid_chars=b"a")
+        target = fnv(plaintext)
+
+        result = ctx.crack(target, crack_len=4, threads=8)
+
         self.assertEqual(result.value, plaintext)
 
     def test_batch_crack(self):
@@ -183,12 +217,15 @@ class CrackingStrategiesTestCase(CrackAssertionsMixin, unittest.TestCase):
 
     def test_max_enum_candidates_limit_does_not_crash(self):
         ctx = CrackContext(valid_chars=LOWER)
-        result = ctx.crack(
-            0,
-            crack_len=8,
-            max_enum_candidates=1,
-        )
-        self.assertIn(result.status, (CrackStatus.FAILED, CrackStatus.SUCCESS))
+        for threads in (1, 4):
+            with self.subTest(threads=threads):
+                result = ctx.crack(
+                    0,
+                    crack_len=8,
+                    max_enum_candidates=1,
+                    threads=threads,
+                )
+                self.assertIn(result.status, (CrackStatus.FAILED, CrackStatus.SUCCESS))
 
     def test_non_matching_charset_fails_without_false_positive(self):
         plaintext = b"abcdefgh"
@@ -259,21 +296,77 @@ class CrackingStrategiesTestCase(CrackAssertionsMixin, unittest.TestCase):
         self.assertEqual(result.status, CrackStatus.SUCCESS)
         self.assertEqual(result.value, seen[1])
 
-    def test_callback_can_collect_until_bounded_exhaustion(self):
+    def test_threaded_callback_calls_are_fully_serialized(self):
+        ctx = collision_context()
+        active = 0
+        max_active = 0
+        seen = []
+        state_lock = threading.Lock()
+
+        def reject(candidate):
+            nonlocal active, max_active
+            with state_lock:
+                active += 1
+                max_active = max(max_active, active)
+            time.sleep(0.01)
+            seen.append(candidate)
+            with state_lock:
+                active -= 1
+            return False
+
+        result = ctx.crack(0xa5, crack_len=2, enum_bound=255, callback=reject, threads=4)
+
+        self.assertEqual(max_active, 1)
+        self.assertGreaterEqual(len(set(seen)), 2)
+        self.assertEqual(result.status, CrackStatus.FAILED)
+
+    def test_threaded_callback_acceptance_stops_later_calls(self):
         ctx = collision_context()
         seen = []
 
-        result = ctx.crack(
-            0xa5,
-            crack_len=2,
-            enum_bound=255,
-            callback=lambda candidate: seen.append(candidate) and False,
-        )
+        def accept(candidate):
+            seen.append(candidate)
+            time.sleep(0.01)
+            return True
 
-        self.assertGreaterEqual(len(set(seen)), 2)
-        self.assertTrue(set(seen) <= COLLISION_VALUES)
-        self.assertEqual(result.status, CrackStatus.FAILED)
-        self.assertIsNone(result.value)
+        result = ctx.crack(0xa5, crack_len=2, enum_bound=255, callback=accept, threads=4)
+
+        self.assertEqual(seen, [result.value])
+        self.assertEqual(result.status, CrackStatus.SUCCESS)
+
+    def test_threaded_callback_exception_propagates_unchanged(self):
+        class SentinelError(Exception):
+            pass
+
+        sentinel = SentinelError("sentinel")
+
+        def fail(_candidate):
+            raise sentinel
+
+        with self.assertRaises(SentinelError) as caught:
+            collision_context().crack(0xa5, crack_len=2, enum_bound=255, callback=fail, threads=4)
+
+        self.assertIs(caught.exception, sentinel)
+
+    def test_callback_can_collect_until_bounded_exhaustion(self):
+        ctx = collision_context()
+        candidates = []
+        for threads in (1, 4):
+            seen = []
+            result = ctx.crack(
+                0xa5,
+                crack_len=2,
+                enum_bound=255,
+                callback=lambda candidate: seen.append(candidate) and False,
+                threads=threads,
+            )
+            self.assertEqual(len(seen), len(set(seen)))
+            self.assertTrue(all(fnv(value, 0x25, 0xb3, 8) == 0xa5 for value in seen))
+            self.assertEqual(set(seen), COLLISION_VALUES)
+            self.assertEqual(result.status, CrackStatus.FAILED)
+            self.assertIsNone(result.value)
+            candidates.append(set(seen))
+        self.assertEqual(candidates[0], candidates[1])
 
     def test_callback_can_reject_only_known_candidate(self):
         ctx = CrackContext(prefix=b"prefix", suffix=b"suffix")
@@ -375,6 +468,17 @@ class CrackingStrategiesTestCase(CrackAssertionsMixin, unittest.TestCase):
         result = ctx.crack(target, crack_len=2)
         self.assertEqual(result.value, plaintext)
         self.assertCracked(result, target, ctx)
+
+        seen = []
+        threaded = ctx.crack(
+            target,
+            crack_len=2,
+            callback=lambda candidate: seen.append(candidate) or True,
+            threads=4,
+        )
+        self.assertEqual(seen, [plaintext])
+        self.assertEqual(threaded.value, plaintext)
+        self.assertCracked(threaded, target, ctx)
 
     def test_fmpz_incremental_path(self):
         plaintext = b"abc"

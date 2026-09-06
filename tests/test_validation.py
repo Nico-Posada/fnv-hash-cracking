@@ -53,6 +53,21 @@ class ValidationTestCase(unittest.TestCase):
         with self.assertRaisesRegex(TypeError, "^callback must be callable or None$"):
             ctx.crack(0, crack_len=8, callback=0)
 
+        with self.assertRaisesRegex(ValueError, "^threads must be greater than 0$"):
+            ctx.crack(0, crack_len=8, threads=0)
+
+        with self.assertRaisesRegex(ValueError, "threads"):
+            ctx.crack(0, crack_len=8, threads=-1)
+
+        with self.assertRaisesRegex(TypeError, "^threads must be an int, got 'bool'$"):
+            ctx.crack(0, crack_len=8, threads=True)
+
+        with self.assertRaisesRegex(TypeError, "^threads must be an int, got 'str'$"):
+            ctx.crack(0, crack_len=8, threads="2")
+
+        with self.assertRaisesRegex(OverflowError, "threads"):
+            ctx.crack(0, crack_len=8, threads=2**32)
+
     def test_callback_exception_propagates_unchanged(self):
         class SentinelError(Exception):
             pass
@@ -133,7 +148,7 @@ class ValidationTestCase(unittest.TestCase):
         )
 
         with self.assertRaises(TypeError):
-            NativeContext.crack(ctx, 0, 8, 4, 0, False, None, 0)
+            NativeContext.crack(ctx, 0, 8, 4, 0, False, None, 1, None)
 
     def test_native_method_validates_target_range(self):
         small_ctx = CrackContext(bit_length=8, offset_basis=0, prime=1)

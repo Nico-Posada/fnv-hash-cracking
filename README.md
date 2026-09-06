@@ -87,6 +87,19 @@ result = ctx.crack(target_hash, crack_len=8)
 result = ctx.crack(target_hash, crack_len=12, incremental=True)
 ```
 
+#### Multithreaded Cracking
+
+Set `threads` above `1` to enumerate one shared lattice with native workers:
+
+```python
+result = ctx.crack(target_hash, crack_len=8, threads=4)
+```
+
+The default is `threads=1`. The value is a maximum worker count for one shared
+lattice enumeration per exact search length. Short searches can be slower due
+to worker and scheduling overhead. Callback calls are fully serialized and
+candidate order is unspecified.
+
 #### Enumeration Limits
 
 Use `enum_bound` to control the local search radius around the lattice

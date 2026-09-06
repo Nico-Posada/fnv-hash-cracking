@@ -10,7 +10,7 @@ from conftest import run_python
 
 
 class InterruptHandlingTestCase(unittest.TestCase):
-    def test_python_crack_handles_sigint_from_parent_process(self):
+    def test_threaded_python_crack_releases_gil_and_handles_sigint(self):
         code = """
             import sys
             import threading
@@ -38,7 +38,7 @@ class InterruptHandlingTestCase(unittest.TestCase):
 
             gate.release()
             try:
-                ctx.crack(0x1234567890abcdef, crack_len=12)
+                ctx.crack(0x1234567890abcdef, crack_len=12, threads=4)
             except KeyboardInterrupt:
                 notifier.join(timeout=5)
                 assert not notifier.is_alive()
@@ -295,6 +295,7 @@ class InterruptHandlingTestCase(unittest.TestCase):
                 result = contexts[index].crack(
                     0x1234567890abcdef + index,
                     crack_len=12,
+                    threads=2,
                 )
                 results.append(result)
 

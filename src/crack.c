@@ -7,7 +7,7 @@
 #include "crack.h"
 #include "interrupt.h"
 #include "inverse.h"
-#include "enumerate.h"
+#include "enumerate_parallel.h"
 #include "fnv.h"
 
 inline static CrackResult _check_prereqs(const context_t ctx) {
@@ -286,6 +286,45 @@ static bool _deltas_to_bytes_fmpz(
 }
 
 typedef struct {
+    char_buffer value;
+    bool memory_error;
+} enum_output_t;
+
+static uint32_t _worker_count(uint32_t threads) {
+    return threads > ENUMERATE_PARALLEL_MAX_WORKERS ? ENUMERATE_PARALLEL_MAX_WORKERS : (threads ? threads : 1);
+}
+
+static CrackResult _collect_outputs(
+    void* contexts, size_t stride, uint32_t count, uint32_t winner, enumerate_solver_result result, char_buffer* output
+) {
+    uint32_t selected = UINT32_MAX;
+    bool memory_error = result == ENUMERATE_SOLVER_MEMORY_ERROR;
+    for (uint32_t i = 0; i < count; ++i) {
+        enum_output_t* current = (enum_output_t*)((char*)contexts + i * stride);
+        memory_error |= current->memory_error;
+        if (current->value.data && (selected == UINT32_MAX || i == winner)) {
+            selected = i;
+        }
+    }
+    for (uint32_t i = 0; i < count; ++i) {
+        enum_output_t* current = (enum_output_t*)((char*)contexts + i * stride);
+        if (i == selected) {
+            *output = current->value;
+        } else {
+            clear_char_buffer(&current->value);
+        }
+    }
+    if (selected != UINT32_MAX) {
+        return SUCCESS;
+    }
+    if (memory_error) {
+        return MEMORY_ERROR;
+    }
+    return result == ENUMERATE_SOLVER_INTERRUPTED ? INTERRUPTED : FAILED;
+}
+
+typedef struct {
+    enum_output_t output;
     const struct _context_s* ctx;
     uint64_t target;
     uint64_t new_hash;
@@ -293,11 +332,9 @@ typedef struct {
     uint32_t bit_len;
     char_buffer prefix;
     char_buffer suffix;
-    char_buffer* out_buffer;
     crack_candidate_cb callback;
     void* userdata;
     char* ret_buf;
-    bool memory_error;
 } enum_u64_cb_ctx_t;
 
 static bool _enum_u64_candidate(const int64_t* deltas, uint32_t delta_len, void* userdata) {
@@ -318,10 +355,10 @@ static bool _enum_u64_candidate(const int64_t* deltas, uint32_t delta_len, void*
         cb_ctx->prefix,
         (char_buffer){cb_ctx->ret_buf, delta_len},
         cb_ctx->suffix,
-        cb_ctx->out_buffer,
+        &cb_ctx->output.value,
         cb_ctx->callback,
         cb_ctx->userdata,
-        &cb_ctx->memory_error
+        &cb_ctx->output.memory_error
     );
 }
 
@@ -332,6 +369,7 @@ static CrackResult _crack_u64_with_len_enumerate(
     const uint32_t expected_len,
     const uint32_t enum_bound,
     const uint64_t max_enum_candidates,
+    uint32_t threads,
     crack_candidate_cb callback,
     void* userdata
 ) {
@@ -362,9 +400,7 @@ static CrackResult _crack_u64_with_len_enumerate(
         }
 
         bool memory_error = false;
-        if (!_handle_candidate(
-                prefix, (char_buffer){NULL, 0}, suffix, out_buffer, callback, userdata, &memory_error
-            )) {
+        if (!_handle_candidate(prefix, (char_buffer){NULL, 0}, suffix, out_buffer, callback, userdata, &memory_error)) {
             return FAILED;
         }
         return memory_error ? MEMORY_ERROR : SUCCESS;
@@ -372,7 +408,12 @@ static CrackResult _crack_u64_with_len_enumerate(
 
     const uint64_t ntarget = _reverse_suffix_u64(target, suffix, prime, bit_len);
 
-    char* ret_buf = calloc((size_t)nn + 1, 1);
+    const uint32_t worker_count = _worker_count(threads);
+    const size_t buffer_size = (size_t)nn + 1;
+    if (buffer_size > SIZE_MAX / worker_count) {
+        return MEMORY_ERROR;
+    }
+    char* ret_buf = calloc(buffer_size * worker_count, 1);
     int64_t* lower_bounds = NULL;
     int64_t* upper_bounds = NULL;
     fmpz_mat_t coeffs;
@@ -402,8 +443,7 @@ static CrackResult _crack_u64_with_len_enumerate(
         result = MEMORY_ERROR;
         goto cleanup;
     }
-    CrackResult bounds_result =
-        _low_state_delta_bounds(ctx, lower_bounds, upper_bounds, nn, new_hash, ntarget, prime);
+    CrackResult bounds_result = _low_state_delta_bounds(ctx, lower_bounds, upper_bounds, nn, new_hash, ntarget, prime);
     if (bounds_result != SUCCESS) {
         result = bounds_result;
         goto cleanup;
@@ -428,28 +468,50 @@ static CrackResult _crack_u64_with_len_enumerate(
         .bit_len = bit_len,
         .prefix = prefix,
         .suffix = suffix,
-        .out_buffer = out_buffer,
         .callback = callback,
         .userdata = userdata,
         .ret_buf = ret_buf,
-        .memory_error = false,
     };
 
-    enumerate_solver_result enum_result = enumerate_bounded_mod(
-        coeffs, rhs, MOD, lower_bounds, upper_bounds, enum_bound, max_enum_candidates, _enum_u64_candidate, &cb_ctx
-    );
-
-    if (enum_result == ENUMERATE_SOLVER_INTERRUPTED) {
-        result = INTERRUPTED;
-        goto cleanup;
-    }
-    if (cb_ctx.memory_error || enum_result == ENUMERATE_SOLVER_MEMORY_ERROR) {
+    enum_u64_cb_ctx_t* workers = worker_count > 1 ? calloc(worker_count, sizeof(*workers)) : &cb_ctx;
+    if (!workers) {
         result = MEMORY_ERROR;
         goto cleanup;
     }
-    if (out_buffer->data) {
-        result = SUCCESS;
-        goto cleanup;
+    for (uint32_t i = 0; i < worker_count; ++i) {
+        workers[i] = cb_ctx;
+        workers[i].ret_buf = ret_buf + i * buffer_size;
+    }
+    enumerate_solver_result enum_result;
+    if (threads > 1) {
+        enum_result = enumerate_bounded_mod_parallel(
+            coeffs,
+            rhs,
+            MOD,
+            lower_bounds,
+            upper_bounds,
+            enum_bound,
+            max_enum_candidates,
+            threads,
+            _enum_u64_candidate,
+            workers,
+            sizeof(*workers)
+        );
+    } else {
+        enum_result = enumerate_bounded_mod(
+            coeffs, rhs, MOD, lower_bounds, upper_bounds, enum_bound, max_enum_candidates, _enum_u64_candidate, workers
+        );
+    }
+    result = _collect_outputs(
+        workers,
+        sizeof(*workers),
+        worker_count,
+        threads > 1 ? enumerate_parallel_winning_worker() : 0,
+        enum_result,
+        out_buffer
+    );
+    if (worker_count > 1) {
+        free(workers);
     }
 
 cleanup:
@@ -465,6 +527,7 @@ cleanup:
 }
 
 typedef struct {
+    enum_output_t output;
     const struct _context_s* ctx;
     const fmpz* target;
     const fmpz* new_hash;
@@ -473,11 +536,9 @@ typedef struct {
     const fmpz* bit_mask;
     char_buffer prefix;
     char_buffer suffix;
-    char_buffer* out_buffer;
     crack_candidate_cb callback;
     void* userdata;
     char* ret_buf;
-    bool memory_error;
     fmpz_t hash;
     fmpz_t state;
     fmpz_t next;
@@ -517,10 +578,10 @@ static bool _enum_fmpz_candidate(const int64_t* deltas, uint32_t delta_len, void
         cb_ctx->prefix,
         (char_buffer){cb_ctx->ret_buf, delta_len},
         cb_ctx->suffix,
-        cb_ctx->out_buffer,
+        &cb_ctx->output.value,
         cb_ctx->callback,
         cb_ctx->userdata,
-        &cb_ctx->memory_error
+        &cb_ctx->output.memory_error
     );
 }
 
@@ -538,6 +599,7 @@ static CrackResult _crack_fmpz_with_len_enumerate(
     const uint32_t expected_len,
     const uint32_t enum_bound,
     const uint64_t max_enum_candidates,
+    uint32_t threads,
     crack_candidate_cb callback,
     void* userdata
 ) {
@@ -558,7 +620,12 @@ static CrackResult _crack_fmpz_with_len_enumerate(
 
     const uint32_t nn = expected_len - prefix.length - suffix.length;
 
-    char* ret_buf = calloc((size_t)nn + 1, 1);
+    const uint32_t worker_count = nn ? _worker_count(threads) : 1;
+    const size_t buffer_size = (size_t)nn + 1;
+    if (buffer_size > SIZE_MAX / worker_count) {
+        return MEMORY_ERROR;
+    }
+    char* ret_buf = calloc(buffer_size * worker_count, 1);
     int64_t* lower_bounds = NULL;
     int64_t* upper_bounds = NULL;
     fmpz_mat_t coeffs;
@@ -646,36 +713,59 @@ static CrackResult _crack_fmpz_with_len_enumerate(
         .bit_mask = bit_mask,
         .prefix = prefix,
         .suffix = suffix,
-        .out_buffer = out_buffer,
         .callback = callback,
         .userdata = userdata,
         .ret_buf = ret_buf,
-        .memory_error = false,
     };
-    fmpz_init(cb_ctx.hash);
-    fmpz_init(cb_ctx.state);
-    fmpz_init(cb_ctx.next);
-    fmpz_init(cb_ctx.byte);
-
-    enumerate_solver_result enum_result = enumerate_bounded_mod(
-        coeffs, rhs, MOD, lower_bounds, upper_bounds, enum_bound, max_enum_candidates, _enum_fmpz_candidate, &cb_ctx
-    );
-    fmpz_clear(cb_ctx.byte);
-    fmpz_clear(cb_ctx.next);
-    fmpz_clear(cb_ctx.state);
-    fmpz_clear(cb_ctx.hash);
-
-    if (enum_result == ENUMERATE_SOLVER_INTERRUPTED) {
-        result = INTERRUPTED;
-        goto cleanup;
-    }
-    if (cb_ctx.memory_error || enum_result == ENUMERATE_SOLVER_MEMORY_ERROR) {
+    enum_fmpz_cb_ctx_t* workers = worker_count > 1 ? calloc(worker_count, sizeof(*workers)) : &cb_ctx;
+    if (!workers) {
         result = MEMORY_ERROR;
         goto cleanup;
     }
-    if (out_buffer->data) {
-        result = SUCCESS;
-        goto cleanup;
+    for (uint32_t i = 0; i < worker_count; ++i) {
+        workers[i] = cb_ctx;
+        workers[i].ret_buf = ret_buf + i * buffer_size;
+        fmpz_init(workers[i].hash);
+        fmpz_init(workers[i].state);
+        fmpz_init(workers[i].next);
+        fmpz_init(workers[i].byte);
+    }
+    enumerate_solver_result enum_result;
+    if (threads > 1) {
+        enum_result = enumerate_bounded_mod_parallel(
+            coeffs,
+            rhs,
+            MOD,
+            lower_bounds,
+            upper_bounds,
+            enum_bound,
+            max_enum_candidates,
+            threads,
+            _enum_fmpz_candidate,
+            workers,
+            sizeof(*workers)
+        );
+    } else {
+        enum_result = enumerate_bounded_mod(
+            coeffs, rhs, MOD, lower_bounds, upper_bounds, enum_bound, max_enum_candidates, _enum_fmpz_candidate, workers
+        );
+    }
+    result = _collect_outputs(
+        workers,
+        sizeof(*workers),
+        worker_count,
+        threads > 1 ? enumerate_parallel_winning_worker() : 0,
+        enum_result,
+        out_buffer
+    );
+    for (uint32_t i = 0; i < worker_count; ++i) {
+        fmpz_clear(workers[i].byte);
+        fmpz_clear(workers[i].next);
+        fmpz_clear(workers[i].state);
+        fmpz_clear(workers[i].hash);
+    }
+    if (worker_count > 1) {
+        free(workers);
     }
 
 cleanup:
@@ -702,7 +792,7 @@ CrackResult crack_u64_with_len_callback_limits(
     void* userdata
 ) {
     return _crack_u64_with_len_enumerate(
-        ctx, target, out_buffer, expected_len, enum_bound, max_enum_candidates, callback, userdata
+        ctx, target, out_buffer, expected_len, enum_bound, max_enum_candidates, 1, callback, userdata
     );
 }
 
@@ -717,7 +807,39 @@ CrackResult crack_fmpz_with_len_callback_limits(
     void* userdata
 ) {
     return _crack_fmpz_with_len_enumerate(
-        ctx, target, out_buffer, expected_len, enum_bound, max_enum_candidates, callback, userdata
+        ctx, target, out_buffer, expected_len, enum_bound, max_enum_candidates, 1, callback, userdata
+    );
+}
+
+CrackResult crack_u64_with_len_callback_limits_threads(
+    context_t ctx,
+    uint64_t target,
+    char_buffer* out_buffer,
+    uint32_t expected_len,
+    uint32_t enum_bound,
+    uint64_t max_enum_candidates,
+    uint32_t threads,
+    crack_candidate_cb callback,
+    void* userdata
+) {
+    return _crack_u64_with_len_enumerate(
+        ctx, target, out_buffer, expected_len, enum_bound, max_enum_candidates, threads, callback, userdata
+    );
+}
+
+CrackResult crack_fmpz_with_len_callback_limits_threads(
+    context_t ctx,
+    fmpz_t target,
+    char_buffer* out_buffer,
+    uint32_t expected_len,
+    uint32_t enum_bound,
+    uint64_t max_enum_candidates,
+    uint32_t threads,
+    crack_candidate_cb callback,
+    void* userdata
+) {
+    return _crack_fmpz_with_len_enumerate(
+        ctx, target, out_buffer, expected_len, enum_bound, max_enum_candidates, threads, callback, userdata
     );
 }
 

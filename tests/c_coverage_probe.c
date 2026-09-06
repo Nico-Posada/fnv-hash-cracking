@@ -1,5 +1,6 @@
 #include <assert.h>
 #include <errno.h>
+#include <pthread.h>
 #include <signal.h>
 #include <stdint.h>
 #include <stdio.h>
@@ -12,6 +13,7 @@
 #include "crack.h"
 #include "enumerate.h"
 #include "enumerate_native.h"
+#include "enumerate_parallel.h"
 #include "fnv.h"
 #include "interrupt.h"
 #include "inverse.h"
@@ -249,14 +251,7 @@ static void check_crack_api(void) {
     crack_callback_state callback_state = {0};
     assert(
         crack_u64_with_len_callback_limits(
-            callback_ctx,
-            0xa5,
-            &out,
-            2,
-            255,
-            0,
-            accept_second_crack_candidate,
-            &callback_state
+            callback_ctx, 0xa5, &out, 2, 255, 0, accept_second_crack_candidate, &callback_state
         ) == SUCCESS
     );
     assert(callback_state.calls == 2);
@@ -331,13 +326,31 @@ static void check_enum_bound_width(void) {
     uint64_t candidates = 0;
     enumerate_solver_result result;
     assert(enumerate_native_try(
-        basis, base, lower_bounds, upper_bounds, DIM, UINT32_C(1) << 31, 1, accept_second_candidate, &candidates, &result
+        basis,
+        base,
+        lower_bounds,
+        upper_bounds,
+        DIM,
+        UINT32_C(1) << 31,
+        1,
+        accept_second_candidate,
+        &candidates,
+        &result
     ));
     assert(result == ENUMERATE_SOLVER_LIMIT);
     assert(candidates == 1);
     candidates = 0;
     assert(enumerate_native_try(
-        basis, base, lower_bounds, upper_bounds, DIM, UINT32_C(1) << 31, 2, accept_second_candidate, &candidates, &result
+        basis,
+        base,
+        lower_bounds,
+        upper_bounds,
+        DIM,
+        UINT32_C(1) << 31,
+        2,
+        accept_second_candidate,
+        &candidates,
+        &result
     ));
     assert(result == ENUMERATE_SOLVER_FOUND);
     assert(candidates == 2);
@@ -402,6 +415,209 @@ static void check_result_malloc_failure(void) {
     destroy_crack_ctx(ctx);
 }
 
+static bool observe_resumptions;
+static const void* pending_cursors[32];
+static unsigned pending_count, resumed_count;
+
+void enumerate_parallel_observe_turn(const void* cursor, enumerate_task_result result, uint32_t visits_used) {
+    assert(visits_used <= ENUMERATE_PARALLEL_QUANTUM);
+    if (!observe_resumptions) {
+        return;
+    }
+    unsigned i;
+    for (i = 0; i < pending_count; ++i) {
+        if (pending_cursors[i] == cursor) {
+            ++resumed_count;
+            break;
+        }
+    }
+    if (result == ENUMERATE_TASK_PENDING && i == pending_count) {
+        assert(pending_count < 32);
+        pending_cursors[pending_count++] = cursor;
+    }
+}
+
+typedef struct {
+    unsigned id;
+    unsigned turns;
+} fifo_cursor;
+
+static unsigned fifo_turns[8], fifo_count, fifo_destroyed;
+
+static enumerate_task_result fifo_advance(
+    void* opaque, uint32_t quantum, uint32_t worker, enumerate_parallel_run_state* run, uint32_t* visits_used
+) {
+    (void)worker;
+    (void)run;
+    fifo_cursor* cursor = opaque;
+    assert(fifo_count < 8);
+    fifo_turns[fifo_count++] = cursor->id;
+    *visits_used = quantum;
+    return ++cursor->turns == 2 ? ENUMERATE_TASK_COMPLETE : ENUMERATE_TASK_PENDING;
+}
+
+static void fifo_destroy(void* cursor) {
+    ++fifo_destroyed;
+    free(cursor);
+}
+
+static void check_scheduler_fifo(void) {
+    fnvcrack_cancel_token* previous = fnvcrack_cancel_token_new();
+    assert(previous);
+    fnvcrack_set_thread_cancel_token(previous);
+    for (uint32_t workers = 0; workers <= 1; ++workers) {
+        enumerate_parallel_task* tasks = malloc(4 * sizeof(*tasks));
+        assert(tasks);
+        fifo_count = fifo_destroyed = 0;
+        for (unsigned i = 0; i < 4; ++i) {
+            fifo_cursor* cursor = calloc(1, sizeof(*cursor));
+            assert(cursor);
+            cursor->id = i;
+            tasks[i] = (enumerate_parallel_task){cursor, fifo_advance, fifo_destroy};
+        }
+        assert(enumerate_parallel_run(tasks, 4, workers, 0, 123, NULL, NULL, 0) == ENUMERATE_SOLVER_DONE);
+        assert(fifo_count == 8 && fifo_destroyed == 4);
+        unsigned first_turns = 0;
+        for (unsigned i = 0; i < 4; ++i) {
+            assert(!(first_turns & (1u << fifo_turns[i])));
+            first_turns |= 1u << fifo_turns[i];
+            assert(fifo_turns[i] == fifo_turns[i + 4]);
+        }
+        assert(fnvcrack_get_thread_cancel_token() == previous);
+        assert(!fnvcrack_interrupted());
+    }
+    fnvcrack_set_thread_cancel_token(NULL);
+    fnvcrack_cancel_token_free(previous);
+}
+
+static bool record_delta(const int64_t* deltas, uint32_t dim, void* userdata) {
+    unsigned* seen = userdata;
+    assert(dim == 2 && deltas[1] == 0);
+    assert(deltas[0] >= -5000 && deltas[0] <= 5000);
+    ++seen[deltas[0] + 5000];
+    return false;
+}
+
+static void check_parallel_cursor_multiplicity(void) {
+    fmpz_mat_t basis, base;
+    fmpz_mat_init(basis, 2, 2);
+    fmpz_mat_one(basis);
+    fmpz_mat_init(base, 1, 2);
+    const int64_t lower[] = {-5000, 0}, upper[] = {5000, 0};
+    unsigned serial[10001] = {0}, parallel[10001];
+    enumerate_solver_result result;
+    assert(enumerate_native_try(basis, base, lower, upper, 2, 5000, 0, record_delta, serial, &result));
+    assert(result == ENUMERATE_SOLVER_DONE);
+    for (unsigned i = 0; i < 10001; ++i) {
+        assert(serial[i] == 1);
+    }
+    observe_resumptions = true;
+    for (unsigned backend = 0; backend < 2; ++backend) {
+        memset(parallel, 0, sizeof(parallel));
+        pending_count = resumed_count = 0;
+        if (backend == 0) {
+            assert(enumerate_native_parallel_try(
+                basis, base, lower, upper, 2, 5000, 0, 1, 123, record_delta, parallel, 0, &result
+            ));
+        } else {
+            result = enumerate_fmpz_parallel_prepared(
+                basis, base, lower, upper, 2, 5000, 0, 1, 123, record_delta, parallel, 0
+            );
+        }
+        assert(result == ENUMERATE_SOLVER_DONE);
+        assert(memcmp(serial, parallel, sizeof(serial)) == 0);
+        assert(pending_count && resumed_count);
+    }
+    observe_resumptions = false;
+    fmpz_mat_clear(base);
+    fmpz_mat_clear(basis);
+}
+
+typedef struct {
+    pthread_mutex_t mutex;
+    pthread_cond_t condition;
+    unsigned calls;
+    bool first_returned;
+    bool accept;
+} limit_state;
+
+typedef struct {
+    limit_state* shared;
+    unsigned order;
+} limit_worker;
+
+typedef struct {
+    limit_worker* workers;
+} limit_cursor;
+
+static bool claimed_candidate(const int64_t* deltas, uint32_t dim, void* userdata) {
+    (void)deltas;
+    (void)dim;
+    limit_worker* worker = userdata;
+    limit_state* state = worker->shared;
+    pthread_mutex_lock(&state->mutex);
+    worker->order = ++state->calls;
+    pthread_cond_broadcast(&state->condition);
+    if (worker->order == 1) {
+        while (state->calls < 2) {
+            pthread_cond_wait(&state->condition, &state->mutex);
+        }
+    } else {
+        assert(worker->order == 2);
+        while (!state->first_returned) {
+            pthread_cond_wait(&state->condition, &state->mutex);
+        }
+        assert(!fnvcrack_interrupted());
+    }
+    const bool accepted = worker->order == 2 && state->accept;
+    pthread_mutex_unlock(&state->mutex);
+    return accepted;
+}
+
+static enumerate_task_result
+claimed_advance(void* opaque, uint32_t quantum, uint32_t id, enumerate_parallel_run_state* run, uint32_t* visits_used) {
+    (void)quantum;
+    limit_cursor* cursor = opaque;
+    const int64_t delta = 0;
+    *visits_used = 1;
+    const bool stopped = enumerate_parallel_emit(run, id, &delta, 1);
+    limit_worker* worker = &cursor->workers[id];
+    if (worker->order == 1) {
+        assert(!stopped);
+        pthread_mutex_lock(&worker->shared->mutex);
+        worker->shared->first_returned = true;
+        pthread_cond_broadcast(&worker->shared->condition);
+        pthread_mutex_unlock(&worker->shared->mutex);
+    }
+    return ENUMERATE_TASK_COMPLETE;
+}
+
+static void check_claimed_candidate_limit(void) {
+    for (unsigned accept = 0; accept < 2; ++accept) {
+        limit_state state = {
+            .mutex = PTHREAD_MUTEX_INITIALIZER,
+            .condition = PTHREAD_COND_INITIALIZER,
+            .accept = accept,
+        };
+        limit_worker workers[2] = {{.shared = &state}, {.shared = &state}};
+        enumerate_parallel_task* tasks = malloc(2 * sizeof(*tasks));
+        assert(tasks);
+        for (unsigned i = 0; i < 2; ++i) {
+            limit_cursor* cursor = malloc(sizeof(*cursor));
+            assert(cursor);
+            cursor->workers = workers;
+            tasks[i] = (enumerate_parallel_task){cursor, claimed_advance, free};
+        }
+        enumerate_solver_result result =
+            enumerate_parallel_run(tasks, 2, 2, 2, 123, claimed_candidate, workers, sizeof(*workers));
+        assert(result == (accept ? ENUMERATE_SOLVER_FOUND : ENUMERATE_SOLVER_LIMIT));
+        assert(state.calls == 2 && state.first_returned);
+        assert(!fnvcrack_interrupted());
+        pthread_cond_destroy(&state.condition);
+        pthread_mutex_destroy(&state.mutex);
+    }
+}
+
 int main(void) {
     check_interrupt_api();
     check_inverse_api();
@@ -411,5 +627,9 @@ int main(void) {
     check_native_transition_bounds();
     check_result_malloc_failure();
     check_enum_bound_width();
+    check_scheduler_fifo();
+    check_parallel_cursor_multiplicity();
+    check_claimed_candidate_limit();
+    puts("Shared scheduler FIFO, resumption, multiplicity and candidate limits passed");
     return 0;
 }

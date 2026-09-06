@@ -1,3 +1,4 @@
+from collections.abc import Callable
 from typing import TypeAlias
 
 
@@ -70,6 +71,8 @@ class NativeContext:
         enum_bound: int,
         max_enum_candidates: int,
         incremental: bool,
+        callback: Callable[[bytes], bool] | None = ...,
+        threads: int = ...,
     ) -> tuple[int, bytes | None]:
         """Try to crack ``target`` using fully normalized native arguments.
 
@@ -78,6 +81,9 @@ class NativeContext:
         :param enum_bound: Search radius around the lattice solution.
         :param max_enum_candidates: Maximum enumeration candidates. ``0`` means unlimited.
         :param incremental: Search all unknown lengths from 1 through ``crack_len``.
+        :param callback: Receives verified candidates and returns whether to accept them.
+        :param threads: Maximum worker count for one shared lattice enumeration per exact search length.
+        Short searches can be slower. Callback calls are fully serialized and candidate order is unspecified.
         :returns: A ``(status, value)`` pair.
         """
         ...

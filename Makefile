@@ -2,13 +2,13 @@
 CC ?= cc
 PKG_CONFIG ?= pkg-config
 CFLAGS ?= -march=native -O3
-CFLAGS += -std=c11
+CFLAGS += -std=c11 -pthread
 # CFLAGS = -march=native -g
 
 FLINT_CFLAGS := $(shell $(PKG_CONFIG) --cflags flint 2>/dev/null)
 FLINT_LIBS := $(shell $(PKG_CONFIG) --libs flint 2>/dev/null)
 CPPFLAGS += -D_POSIX_C_SOURCE=200809L $(FLINT_CFLAGS)
-LDLIBS += -lflint $(if $(FLINT_LIBS),$(filter-out -lflint,$(FLINT_LIBS)),-lmpfr -lgmp)
+LDLIBS += -pthread -lflint $(if $(FLINT_LIBS),$(filter-out -lflint,$(FLINT_LIBS)),-lmpfr -lgmp)
 
 # Target executable name
 TARGET = main
@@ -53,7 +53,7 @@ build-pyext-coverage:
 
 coverage-c-probe:
 	mkdir -p build
-	$(CC) $(CPPFLAGS) $(CFLAGS) -O0 -g --coverage -Wall -Isrc tests/c_coverage_probe.c $(C_COVERAGE_SOURCES) $(LDFLAGS) -o build/c_coverage_probe $(LDLIBS)
+	$(CC) $(CPPFLAGS) $(CFLAGS) -O0 -g --coverage -fprofile-update=atomic -DFNVCRACK_ENUMERATE_PROBE -Wall -Isrc tests/c_coverage_probe.c $(C_COVERAGE_SOURCES) $(LDFLAGS) -o build/c_coverage_probe $(LDLIBS)
 	./build/c_coverage_probe
 
 coverage-c: clean-c-coverage build-pyext-coverage

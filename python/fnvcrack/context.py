@@ -49,6 +49,7 @@ class CrackContext(_fnvcrack.NativeContext):
         max_enum_candidates: int = DEFAULT_MAX_ENUM_CANDIDATES,
         incremental: bool = False,
         callback: Callable[[bytes], bool] | None = None,
+        threads: int = 1,
     ) -> CrackResult:
         """Try to find an input whose FNV-1a hash matches ``target``.
 
@@ -58,6 +59,9 @@ class CrackContext(_fnvcrack.NativeContext):
         :param max_enum_candidates: Maximum enumeration candidates. ``0`` means unlimited.
         :param incremental: Search all unknown lengths from 1 through ``crack_len``.
         :param callback: Receives each verified candidate. A truthy return accepts it; falsey continues searching.
+        :param threads: Maximum worker count for one shared lattice enumeration per exact search length.
+        With multiple threads, callback calls are fully serialized and candidate order is unspecified.
+        Short searches can be slower due to worker and scheduling overhead.
         :returns: The crack status and accepted value, if any. With ``callback=None``, the first verified match is
             accepted. If a callback rejects every candidate, the result is ``FAILED`` with no value.
         A custom ``SIGINT`` handler that returns normally produces
@@ -74,6 +78,7 @@ class CrackContext(_fnvcrack.NativeContext):
             max_enum_candidates,
             incremental,
             callback,
+            threads,
         )
         return CrackResult(status=status, value=value)
 

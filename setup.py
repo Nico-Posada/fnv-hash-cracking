@@ -9,8 +9,8 @@ from setuptools.command.build_ext import build_ext
 
 
 coverage_enabled = os.environ.get("FNVCRACK_COVERAGE") == "1"
-extra_compile_args = ["/std:c11", "/O2"] if sys.platform == "win32" else ["-std=c11", "-O3", "-Wall"]
-extra_link_args = []
+extra_compile_args = ["/std:c11", "/O2"] if sys.platform == "win32" else ["-std=c11", "-O3", "-Wall", "-pthread"]
+extra_link_args = [] if sys.platform == "win32" else ["-pthread"]
 include_dirs = ["src"]
 library_dirs = []
 define_macros = [("FNVCRACK_PYTHON_EXTENSION", "1")]
@@ -31,8 +31,8 @@ def _pkg_config_paths(option, prefix):
     return [arg.removeprefix(prefix) for arg in shlex.split(output) if arg.startswith(prefix)]
 
 if coverage_enabled and sys.platform != "win32":
-    extra_compile_args = ["-std=c11", "-O0", "-g", "--coverage", "-Wall"]
-    extra_link_args = ["--coverage"]
+    extra_compile_args = ["-std=c11", "-O0", "-g", "--coverage", "-fprofile-update=atomic", "-Wall", "-pthread"]
+    extra_link_args = ["--coverage", "-pthread"]
 
 include_dirs.extend(_pkg_config_paths("--cflags-only-I", "-I"))
 library_dirs.extend(_pkg_config_paths("--libs-only-L", "-L"))

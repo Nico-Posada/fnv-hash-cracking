@@ -8,6 +8,16 @@ typedef struct {
     bool failed;
 } python_crack_callback_ctx_t;
 
+typedef struct {
+    PyObject* callback;
+    PyThread_type_lock callback_lock;
+    bool callback_accepted;
+    bool callback_failed;
+    PyObject* exception_type;
+    PyObject* exception_value;
+    PyObject* exception_traceback;
+} parallel_crack_ctx_t;
+
 static bool _python_crack_candidate(char_buffer candidate, void* userdata) {
     python_crack_callback_ctx_t* ctx = userdata;
     PyEval_RestoreThread(ctx->thread_state);
@@ -29,6 +39,88 @@ static bool _python_crack_candidate(char_buffer candidate, void* userdata) {
     }
     ctx->thread_state = PyEval_SaveThread();
     return accepted != 0;
+}
+
+static bool _parallel_python_crack_candidate(char_buffer candidate, void* userdata) {
+    parallel_crack_ctx_t* ctx = userdata;
+    (void)PyThread_acquire_lock(ctx->callback_lock, WAIT_LOCK);
+    if (ctx->callback_accepted || ctx->callback_failed) {
+        PyThread_release_lock(ctx->callback_lock);
+        return false;
+    }
+
+    PyGILState_STATE gil_state = PyGILState_Ensure();
+    PyObject* candidate_obj = PyBytes_FromStringAndSize(candidate.data, candidate.length);
+    PyObject* callback_result = NULL;
+    int accepted = -1;
+    if (candidate_obj) {
+        callback_result = PyObject_CallOneArg(ctx->callback, candidate_obj);
+        if (callback_result) {
+            accepted = PyObject_IsTrue(callback_result);
+        }
+    }
+
+    Py_XDECREF(callback_result);
+    Py_XDECREF(candidate_obj);
+    if (accepted < 0) {
+        PyErr_Fetch(&ctx->exception_type, &ctx->exception_value, &ctx->exception_traceback);
+        ctx->callback_failed = true;
+    } else if (accepted) {
+        ctx->callback_accepted = true;
+    }
+    PyGILState_Release(gil_state);
+    PyThread_release_lock(ctx->callback_lock);
+    return accepted != 0;
+}
+
+static CrackResult _run_crack(
+    context_t ctx,
+    fmpz* target_fmpz,
+    uint64_t target_u64,
+    char_buffer* output,
+    uint32_t crack_len,
+    uint32_t enum_bound,
+    uint64_t max_enum_candidates,
+    uint32_t threads,
+    bool incremental,
+    crack_candidate_cb callback,
+    void* userdata
+) {
+    const uint32_t known_len = (uint32_t)(get_prefix(ctx)->length + get_suffix(ctx)->length);
+    for (uint32_t length = incremental && crack_len ? 1 : crack_len;; ++length) {
+        if (fnvcrack_interrupted()) {
+            return INTERRUPTED;
+        }
+        CrackResult result;
+        if (ctx->uses_fmpz) {
+            result = crack_fmpz_with_len_callback_limits_threads(
+                ctx,
+                target_fmpz,
+                output,
+                length + known_len,
+                enum_bound,
+                max_enum_candidates,
+                threads,
+                callback,
+                userdata
+            );
+        } else {
+            result = crack_u64_with_len_callback_limits_threads(
+                ctx,
+                target_u64,
+                output,
+                length + known_len,
+                enum_bound,
+                max_enum_candidates,
+                threads,
+                callback,
+                userdata
+            );
+        }
+        if (result != FAILED || length == crack_len) {
+            return result;
+        }
+    }
 }
 
 void CrackContext_dealloc(CrackContext* self) {
@@ -121,8 +213,8 @@ PyObject* CrackContext_new(PyTypeObject* type, PyObject* args, PyObject* kwds) {
 
 #define ENSURE_BIT_SIZE(arg)                                                                                           \
     do {                                                                                                               \
-        const unsigned long long real_bit_len = _pylong_num_bits(arg);                                                \
-        if (real_bit_len == (unsigned long long)-1 && PyErr_Occurred())                                               \
+        const unsigned long long real_bit_len = _pylong_num_bits(arg);                                                 \
+        if (real_bit_len == (unsigned long long)-1 && PyErr_Occurred())                                                \
             goto fail_ints;                                                                                            \
         if (real_bit_len > bits) {                                                                                     \
             PyErr_Format(                                                                                              \
@@ -340,23 +432,23 @@ finish:
 
 PyObject* CrackContext_crack(CrackContext* self, PyObject* args, PyObject* kwds) {
     static char* kwlist[] = {
-        "target", "crack_len", "enum_bound", "max_enum_candidates", "incremental", "callback", NULL
-    };
+        "target", "crack_len", "enum_bound", "max_enum_candidates", "incremental", "callback", "threads", NULL};
 
     PyObject *target = NULL, *crack_len_obj = NULL, *enum_bound_obj = NULL, *max_enum_candidates_obj = NULL,
-             *incremental_obj = NULL, *callback_obj = Py_None;
+             *incremental_obj = NULL, *callback_obj = Py_None, *threads_obj = NULL;
 
     if (!PyArg_ParseTupleAndKeywords(
             args,
             kwds,
-            "OOOOO|O",
+            "OOOOO|OO",
             kwlist,
             &target,
             &crack_len_obj,
             &enum_bound_obj,
             &max_enum_candidates_obj,
             &incremental_obj,
-            &callback_obj
+            &callback_obj,
+            &threads_obj
         )) {
         return NULL;
     }
@@ -367,7 +459,6 @@ PyObject* CrackContext_crack(CrackContext* self, PyObject* args, PyObject* kwds)
     }
 
     if (!is_initialized(self->ctx)) {
-        // TODO: add custom excpetion types
         PyErr_SetString(
             CrackException, "CrackContext uninitialized. Make sure to run the constructor before using this."
         );
@@ -382,7 +473,7 @@ PyObject* CrackContext_crack(CrackContext* self, PyObject* args, PyObject* kwds)
         return NULL;
     }
 
-    uint32_t crack_len, enum_bound;
+    uint32_t crack_len, enum_bound, threads;
     uint64_t max_enum_candidates;
     bool incremental;
     if (!_parse_uint32_arg(crack_len_obj, &crack_len, false, 0)) {
@@ -397,15 +488,24 @@ PyObject* CrackContext_crack(CrackContext* self, PyObject* args, PyObject* kwds)
     if (!_parse_bool_arg(incremental_obj, &incremental)) {
         return NULL;
     }
+    if (!_parse_uint32_arg(threads_obj, &threads, true, 1)) {
+        return NULL;
+    }
+    if (threads == 0) {
+        PyErr_SetString(PyExc_ValueError, "threads must be greater than 0");
+        return NULL;
+    }
+
     const size_t known_len = get_prefix(self->ctx)->length + get_suffix(self->ctx)->length;
     if (known_len > UINT32_MAX || (uint64_t)crack_len + (uint64_t)known_len > UINT32_MAX) {
         PyErr_SetString(PyExc_OverflowError, "crack_len plus prefix and suffix lengths must fit in uint32");
         return NULL;
     }
-
     if (crack_len == 0 && known_len == 0) {
         return Py_BuildValue("(iO)", BAD_SEARCH_LENGTH, Py_None);
     }
+
+    const bool parallel = threads > 1 && crack_len > 0;
 
     char_buffer output = {NULL, 0};
     CrackResult crack_result = FAILED;
@@ -439,18 +539,30 @@ PyObject* CrackContext_crack(CrackContext* self, PyObject* args, PyObject* kwds)
         .thread_state = NULL,
         .failed = false,
     };
-
-    bool lease_acquired = false;
+    parallel_crack_ctx_t parallel_ctx = {.callback = callback_ctx.callback};
+    if (parallel && callback_ctx.callback) {
+        parallel_ctx.callback_lock = PyThread_allocate_lock();
+        if (!parallel_ctx.callback_lock) {
+            if (target_fmpz_initialized) {
+                fmpz_clear(target_fmpz);
+            }
+            Py_DECREF(callback_ctx.callback);
+            return PyErr_NoMemory();
+        }
+    }
     bool sync_failed = false;
+
     if (fnvcrack_install_interrupt_handler() != 0) {
         if (target_fmpz_initialized) {
             fmpz_clear(target_fmpz);
         }
         Py_XDECREF(callback_ctx.callback);
+        if (parallel_ctx.callback_lock) {
+            PyThread_free_lock(parallel_ctx.callback_lock);
+        }
         PyErr_SetString(CrackException, "Failed to install interrupt handler");
         return NULL;
     }
-    lease_acquired = true;
 
     if (fnvcrack_sync_python_interrupt() != 0) {
         sync_failed = true;
@@ -458,71 +570,19 @@ PyObject* CrackContext_crack(CrackContext* self, PyObject* args, PyObject* kwds)
     }
 
     callback_ctx.thread_state = PyEval_SaveThread();
-    if (self->ctx->uses_fmpz) {
-        if (incremental) {
-            if (callback_ctx.callback) {
-                crack_result = crack_fmpz_callback_limits(
-                    self->ctx,
-                    target_fmpz,
-                    &output,
-                    crack_len,
-                    enum_bound,
-                    max_enum_candidates,
-                    _python_crack_candidate,
-                    &callback_ctx
-                );
-            } else {
-                crack_result =
-                    crack_fmpz_limits(self->ctx, target_fmpz, &output, crack_len, enum_bound, max_enum_candidates);
-            }
-        } else if (callback_ctx.callback) {
-            crack_result = crack_fmpz_with_len_callback_limits(
-                self->ctx,
-                target_fmpz,
-                &output,
-                crack_len + (uint32_t)known_len,
-                enum_bound,
-                max_enum_candidates,
-                _python_crack_candidate,
-                &callback_ctx
-            );
-        } else {
-            crack_result = crack_fmpz_with_len_limits(
-                self->ctx, target_fmpz, &output, crack_len + (uint32_t)known_len, enum_bound, max_enum_candidates
-            );
-        }
-    } else if (incremental) {
-        if (callback_ctx.callback) {
-            crack_result = crack_u64_callback_limits(
-                self->ctx,
-                target_u64,
-                &output,
-                crack_len,
-                enum_bound,
-                max_enum_candidates,
-                _python_crack_candidate,
-                &callback_ctx
-            );
-        } else {
-            crack_result =
-                crack_u64_limits(self->ctx, target_u64, &output, crack_len, enum_bound, max_enum_candidates);
-        }
-    } else if (callback_ctx.callback) {
-        crack_result = crack_u64_with_len_callback_limits(
-            self->ctx,
-            target_u64,
-            &output,
-            crack_len + (uint32_t)known_len,
-            enum_bound,
-            max_enum_candidates,
-            _python_crack_candidate,
-            &callback_ctx
-        );
-    } else {
-        crack_result = crack_u64_with_len_limits(
-            self->ctx, target_u64, &output, crack_len + (uint32_t)known_len, enum_bound, max_enum_candidates
-        );
-    }
+    crack_result = _run_crack(
+        self->ctx,
+        target_fmpz_initialized ? target_fmpz : NULL,
+        target_u64,
+        &output,
+        crack_len,
+        enum_bound,
+        max_enum_candidates,
+        parallel ? threads : 1,
+        incremental,
+        callback_ctx.callback ? (parallel ? _parallel_python_crack_candidate : _python_crack_candidate) : NULL,
+        parallel ? (void*)&parallel_ctx : &callback_ctx
+    );
     PyEval_RestoreThread(callback_ctx.thread_state);
 
 cleanup_acquired:
@@ -530,20 +590,22 @@ cleanup_acquired:
         fmpz_clear(target_fmpz);
     }
 
-    int release_result = 0;
-    if (lease_acquired) {
-        release_result = fnvcrack_restore_interrupt_handler();
-        lease_acquired = false;
-    }
-
-    if (callback_ctx.failed) {
-        clear_char_buffer(&output);
-        Py_XDECREF(callback_ctx.callback);
-        return NULL;
+    const int release_result = fnvcrack_restore_interrupt_handler();
+    const bool callback_failed = callback_ctx.failed || parallel_ctx.callback_failed;
+    if (parallel_ctx.callback_lock) {
+        PyThread_free_lock(parallel_ctx.callback_lock);
     }
     Py_XDECREF(callback_ctx.callback);
-    bool interrupted = crack_result == INTERRUPTED || fnvcrack_interrupted();
 
+    if (callback_failed) {
+        clear_char_buffer(&output);
+        if (parallel_ctx.callback_failed) {
+            PyErr_Restore(parallel_ctx.exception_type, parallel_ctx.exception_value, parallel_ctx.exception_traceback);
+        }
+        return NULL;
+    }
+
+    const bool interrupted = crack_result == INTERRUPTED || fnvcrack_interrupted();
     if (sync_failed) {
         clear_char_buffer(&output);
         return NULL;

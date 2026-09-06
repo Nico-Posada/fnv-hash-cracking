@@ -4,6 +4,7 @@
 
 #include "enumerate.h"
 #include "enumerate_native.h"
+#include "enumerate_parallel.h"
 #include "interrupt.h"
 
 typedef struct {
@@ -22,6 +23,17 @@ typedef struct {
     uint64_t candidates;
     enumerate_solver_result result;
 } enum_search_t;
+
+typedef struct {
+    enum_search_t search;
+    fmpz_mat_t current;
+    fmpz_t scratch_numerator;
+    fmpz_t scratch_quotient;
+    enumerate_cursor_frame* frames;
+    uint32_t depth;
+    uint32_t root_depth;
+    bool done;
+} fmpz_cursor_t;
 
 static void _mat_row_mul(fmpz_mat_t out, const fmpz_mat_t row, const fmpz_mat_t M) {
     const slong n = fmpz_mat_ncols(M);
@@ -241,10 +253,10 @@ static bool _coefficient_bounds(enum_search_t* ctx, uint32_t depth, int64_t* low
         }
 
         const int sign = fmpz_sgn(row);
-        const fmpz* min = sign > 0 ? fmpz_mat_entry(ctx->fit_min, next_depth, j)
-                                   : fmpz_mat_entry(ctx->fit_max, next_depth, j);
-        const fmpz* max = sign > 0 ? fmpz_mat_entry(ctx->fit_max, next_depth, j)
-                                   : fmpz_mat_entry(ctx->fit_min, next_depth, j);
+        const fmpz* min =
+            sign > 0 ? fmpz_mat_entry(ctx->fit_min, next_depth, j) : fmpz_mat_entry(ctx->fit_max, next_depth, j);
+        const fmpz* max =
+            sign > 0 ? fmpz_mat_entry(ctx->fit_max, next_depth, j) : fmpz_mat_entry(ctx->fit_min, next_depth, j);
 
         fmpz_sub(numerator, min, current);
         fmpz_cdiv_q(quotient, numerator, row);
@@ -330,7 +342,282 @@ static void _search(enum_search_t* ctx, uint32_t depth) {
     _add_basis_row(ctx, depth, -prev_off);
 }
 
-enumerate_solver_result enumerate_bounded_mod(
+static void _fmpz_cursor_destroy(void* opaque) {
+    fmpz_cursor_t* cursor = opaque;
+    if (!cursor) {
+        return;
+    }
+    fmpz_clear(cursor->search.scratch_quotient);
+    fmpz_clear(cursor->search.scratch_numerator);
+    fmpz_mat_clear(cursor->search.current);
+    free(cursor->search.deltas);
+    free(cursor->frames);
+    free(cursor);
+}
+
+static enumerate_task_result _fmpz_cursor_advance(
+    void* opaque, uint32_t quantum, uint32_t worker_id, enumerate_parallel_run_state* run, uint32_t* visits_used
+);
+
+static enumerate_parallel_task _fmpz_cursor_task(fmpz_cursor_t* cursor) {
+    return (enumerate_parallel_task){
+        .cursor = cursor,
+        .advance = _fmpz_cursor_advance,
+        .destroy = _fmpz_cursor_destroy,
+    };
+}
+
+static fmpz_cursor_t* _fmpz_cursor_new(const enum_search_t* shared, const fmpz_mat_t current, uint32_t depth) {
+    fmpz_cursor_t* cursor = calloc(1, sizeof(*cursor));
+    if (!cursor) {
+        return NULL;
+    }
+    cursor->frames = calloc(shared->dim, sizeof(*cursor->frames));
+    cursor->search.deltas = calloc(shared->dim, sizeof(*cursor->search.deltas));
+    if (!cursor->frames || !cursor->search.deltas) {
+        free(cursor->search.deltas);
+        free(cursor->frames);
+        free(cursor);
+        return NULL;
+    }
+
+    cursor->search.current = cursor->current;
+    cursor->search.scratch_numerator = cursor->scratch_numerator;
+    cursor->search.scratch_quotient = cursor->scratch_quotient;
+    fmpz_mat_init(cursor->search.current, 1, shared->dim);
+    fmpz_mat_set(cursor->search.current, current);
+    fmpz_init(cursor->search.scratch_numerator);
+    fmpz_init(cursor->search.scratch_quotient);
+    cursor->search.basis = shared->basis;
+    cursor->search.fit_min = shared->fit_min;
+    cursor->search.fit_max = shared->fit_max;
+    cursor->search.dim = shared->dim;
+    cursor->search.enum_bound = shared->enum_bound;
+    cursor->depth = depth;
+    cursor->root_depth = depth;
+    return cursor;
+}
+
+static void _fmpz_frame_prepare(fmpz_cursor_t* cursor) {
+    enumerate_cursor_frame* frame = &cursor->frames[cursor->depth];
+    if (frame->initialized) {
+        return;
+    }
+    int64_t lower;
+    int64_t upper;
+    if (!_coefficient_bounds(&cursor->search, cursor->depth, &lower, &upper)) {
+        lower = 1;
+        upper = 0;
+    }
+    enumerate_frame_init(frame, lower, upper);
+}
+
+static enumerate_task_result _fmpz_cursor_advance(
+    void* opaque, uint32_t quantum, uint32_t worker_id, enumerate_parallel_run_state* run, uint32_t* visits_used
+) {
+    fmpz_cursor_t* cursor = opaque;
+    *visits_used = 0;
+    if (cursor->done || fnvcrack_interrupted()) {
+        cursor->done = true;
+        return ENUMERATE_TASK_COMPLETE;
+    }
+
+    while (!cursor->done && *visits_used < quantum) {
+        _fmpz_frame_prepare(cursor);
+        enumerate_cursor_frame* frame = &cursor->frames[cursor->depth];
+        int64_t offset;
+        if (!enumerate_frame_next(frame, &offset)) {
+            _add_basis_row(&cursor->search, cursor->depth, -frame->previous);
+            *frame = (enumerate_cursor_frame){0};
+            if (cursor->depth == cursor->root_depth) {
+                cursor->done = true;
+            } else {
+                --cursor->depth;
+            }
+            continue;
+        }
+
+        _add_basis_row(&cursor->search, cursor->depth, offset - frame->previous);
+        frame->previous = offset;
+        ++*visits_used;
+        if (fnvcrack_interrupted()) {
+            cursor->done = true;
+            break;
+        }
+        if (cursor->depth + 1 == cursor->search.dim) {
+            for (uint32_t j = 0; j < cursor->search.dim; ++j) {
+                cursor->search.deltas[j] = fmpz_get_si(fmpz_mat_entry(cursor->search.current, 0, j));
+            }
+            if (fnvcrack_interrupted() ||
+                enumerate_parallel_emit(run, worker_id, cursor->search.deltas, cursor->search.dim)) {
+                cursor->done = true;
+            }
+        } else {
+            ++cursor->depth;
+            cursor->frames[cursor->depth] = (enumerate_cursor_frame){0};
+        }
+    }
+
+    return cursor->done ? ENUMERATE_TASK_COMPLETE : ENUMERATE_TASK_PENDING;
+}
+
+static enumerate_task_result
+_fmpz_cursor_expand(void* opaque, uint32_t quantum, enumerate_parallel_frontier* frontier, uint32_t* visits_used) {
+    fmpz_cursor_t* cursor = opaque;
+    *visits_used = 0;
+    if (cursor->done) {
+        return ENUMERATE_TASK_COMPLETE;
+    }
+    if (fnvcrack_interrupted()) {
+        return ENUMERATE_TASK_PENDING;
+    }
+    if (cursor->depth + 1 == cursor->search.dim) {
+        return ENUMERATE_TASK_PENDING;
+    }
+
+    _fmpz_frame_prepare(cursor);
+    enumerate_cursor_frame* frame = &cursor->frames[cursor->depth];
+    while (*visits_used < quantum && frontier->count + 1 < frontier->capacity) {
+        int64_t offset;
+        if (!enumerate_frame_next(frame, &offset)) {
+            return ENUMERATE_TASK_COMPLETE;
+        }
+
+        _add_basis_row(&cursor->search, cursor->depth, offset - frame->previous);
+        frame->previous = offset;
+        ++*visits_used;
+        if (fnvcrack_interrupted()) {
+            return ENUMERATE_TASK_PENDING;
+        }
+        const uint32_t child_depth = cursor->depth + 1;
+        if (_can_still_fit(&cursor->search, child_depth)) {
+            fmpz_cursor_t* child = _fmpz_cursor_new(&cursor->search, cursor->search.current, child_depth);
+            if (!child) {
+                return ENUMERATE_TASK_MEMORY_ERROR;
+            }
+            enumerate_parallel_frontier_push(frontier, _fmpz_cursor_task(child));
+        }
+    }
+    return ENUMERATE_TASK_PENDING;
+}
+
+enumerate_solver_result enumerate_fmpz_parallel_prepared(
+    const fmpz_mat_t basis,
+    const fmpz_mat_t base,
+    const int64_t* lower_bounds,
+    const int64_t* upper_bounds,
+    uint32_t dim,
+    uint32_t enum_bound,
+    uint64_t max_candidates,
+    uint32_t threads,
+    uint64_t shuffle_seed,
+    enumerate_solution_cb cb,
+    void* worker_contexts,
+    size_t worker_context_size
+) {
+    if (!dim) {
+        return enumerate_parallel_run(
+            NULL, 0, threads, max_candidates, shuffle_seed, cb, worker_contexts, worker_context_size
+        );
+    }
+    if (fnvcrack_interrupted()) {
+        return ENUMERATE_SOLVER_INTERRUPTED;
+    }
+    fmpz_mat_t tail_abs;
+    fmpz_mat_t fit_min;
+    fmpz_mat_t fit_max;
+    fmpz_mat_init(tail_abs, (slong)dim + 1, dim);
+    fmpz_mat_init(fit_min, (slong)dim + 1, dim);
+    fmpz_mat_init(fit_max, (slong)dim + 1, dim);
+    _build_tail_abs(tail_abs, basis, enum_bound);
+    _build_fit_bounds(fit_min, fit_max, tail_abs, lower_bounds, upper_bounds);
+
+    enum_search_t shared = {
+        .basis = basis,
+        .fit_min = fit_min,
+        .fit_max = fit_max,
+        .dim = dim,
+        .enum_bound = enum_bound,
+    };
+    enumerate_parallel_task* tasks;
+    size_t task_count;
+    enumerate_solver_result result;
+    fmpz_cursor_t* root = _fmpz_cursor_new(&shared, base, 0);
+    if (!root) {
+        result = ENUMERATE_SOLVER_MEMORY_ERROR;
+    } else {
+        root->done = !_can_still_fit(&root->search, 0);
+        result = enumerate_parallel_prepare(_fmpz_cursor_task(root), threads, _fmpz_cursor_expand, &tasks, &task_count);
+    }
+    if (result == ENUMERATE_SOLVER_DONE) {
+        result = enumerate_parallel_run(
+            tasks, task_count, threads, max_candidates, shuffle_seed, cb, worker_contexts, worker_context_size
+        );
+    }
+
+    fmpz_mat_clear(fit_max);
+    fmpz_mat_clear(fit_min);
+    fmpz_mat_clear(tail_abs);
+    return result;
+}
+
+static enumerate_solver_result _enumerate_fmpz_serial_prepared(
+    const fmpz_mat_t basis,
+    const fmpz_mat_t base,
+    const int64_t* lower_bounds,
+    const int64_t* upper_bounds,
+    uint32_t dim,
+    uint32_t enum_bound,
+    uint64_t max_candidates,
+    enumerate_solution_cb cb,
+    void* cb_ctx
+) {
+    int64_t* deltas = calloc(dim, sizeof(*deltas));
+    if (!deltas) {
+        return ENUMERATE_SOLVER_MEMORY_ERROR;
+    }
+    fmpz_mat_t tail_abs;
+    fmpz_mat_t fit_min;
+    fmpz_mat_t fit_max;
+    fmpz_mat_init(tail_abs, (slong)dim + 1, dim);
+    fmpz_mat_init(fit_min, (slong)dim + 1, dim);
+    fmpz_mat_init(fit_max, (slong)dim + 1, dim);
+    _build_tail_abs(tail_abs, basis, enum_bound);
+    _build_fit_bounds(fit_min, fit_max, tail_abs, lower_bounds, upper_bounds);
+    fmpz_t scratch_numerator;
+    fmpz_t scratch_quotient;
+    fmpz_init(scratch_numerator);
+    fmpz_init(scratch_quotient);
+    enum_search_t search_ctx = {
+        .basis = basis,
+        .fit_min = fit_min,
+        .fit_max = fit_max,
+        .current = (fmpz_mat_struct*)base,
+        .scratch_numerator = scratch_numerator,
+        .scratch_quotient = scratch_quotient,
+        .cb = cb,
+        .cb_ctx = cb_ctx,
+        .deltas = deltas,
+        .dim = dim,
+        .enum_bound = enum_bound,
+        .max_candidates = max_candidates,
+        .result = ENUMERATE_SOLVER_DONE,
+    };
+    if (_can_still_fit(&search_ctx, 0)) {
+        _search(&search_ctx, 0);
+    }
+
+    const enumerate_solver_result result = search_ctx.result;
+    fmpz_clear(scratch_quotient);
+    fmpz_clear(scratch_numerator);
+    fmpz_mat_clear(fit_max);
+    fmpz_mat_clear(fit_min);
+    fmpz_mat_clear(tail_abs);
+    free(deltas);
+    return result;
+}
+
+static enumerate_solver_result _enumerate_bounded_mod_impl(
     const fmpz_mat_t coeffs,
     const fmpz_t rhs,
     const fmpz_t modulus,
@@ -338,8 +625,11 @@ enumerate_solver_result enumerate_bounded_mod(
     const int64_t* upper_bounds,
     uint32_t enum_bound,
     uint64_t max_candidates,
+    uint32_t threads,
     enumerate_solution_cb cb,
-    void* cb_ctx
+    void* worker_contexts,
+    size_t worker_context_size,
+    bool parallel
 ) {
     const slong n = fmpz_mat_ncols(coeffs);
     if (n <= 0) {
@@ -349,7 +639,9 @@ enumerate_solver_result enumerate_bounded_mod(
         return ENUMERATE_SOLVER_INTERRUPTED;
     }
 
-    fmpz_t inv, rhs_mod, tmp;
+    fmpz_t inv;
+    fmpz_t rhs_mod;
+    fmpz_t tmp;
     fmpz_init(inv);
     fmpz_init(rhs_mod);
     fmpz_init(tmp);
@@ -362,7 +654,13 @@ enumerate_solver_result enumerate_bounded_mod(
         return ENUMERATE_SOLVER_DONE;
     }
 
-    fmpz_mat_t solution, basis, reduced, target, coords, closest, base;
+    fmpz_mat_t solution;
+    fmpz_mat_t basis;
+    fmpz_mat_t reduced;
+    fmpz_mat_t target;
+    fmpz_mat_t coords;
+    fmpz_mat_t closest;
+    fmpz_mat_t base;
     fmpz_mat_init(solution, 1, n);
     fmpz_mat_init(basis, n, n);
     fmpz_mat_init(reduced, n, n);
@@ -375,7 +673,6 @@ enumerate_solver_result enumerate_bounded_mod(
     fmpz_mod(rhs_mod, rhs, modulus);
     fmpz_mul(fmpz_mat_entry(solution, 0, 0), rhs_mod, inv);
     fmpz_mod(fmpz_mat_entry(solution, 0, 0), fmpz_mat_entry(solution, 0, 0), modulus);
-
     for (slong i = 1; i < n; ++i) {
         fmpz_mod(tmp, fmpz_mat_entry(coeffs, 0, i), modulus);
         fmpz_mul(tmp, tmp, inv);
@@ -386,6 +683,10 @@ enumerate_solver_result enumerate_bounded_mod(
     fmpz_set(fmpz_mat_entry(basis, n - 1, 0), modulus);
 
     fmpz_mat_set(reduced, basis);
+    if (fnvcrack_interrupted()) {
+        result = ENUMERATE_SOLVER_INTERRUPTED;
+        goto cleanup;
+    }
     fmpz_lll_t fl;
     fmpz_lll_context_init_default(fl);
     fmpz_lll_d(reduced, NULL, fl);
@@ -399,7 +700,10 @@ enumerate_solver_result enumerate_bounded_mod(
         fmpz_set_si(fmpz_mat_entry(target, 0, j), mid);
         fmpz_sub(fmpz_mat_entry(target, 0, j), fmpz_mat_entry(target, 0, j), fmpz_mat_entry(solution, 0, j));
     }
-
+    if (fnvcrack_interrupted()) {
+        result = ENUMERATE_SOLVER_INTERRUPTED;
+        goto cleanup;
+    }
     if (!_kannan_cvp_coords(coords, reduced, target)) {
         fmpz_mat_zero(coords);
     }
@@ -412,52 +716,59 @@ enumerate_solver_result enumerate_bounded_mod(
     for (slong j = 0; j < n; ++j) {
         fmpz_add(fmpz_mat_entry(base, 0, j), fmpz_mat_entry(solution, 0, j), fmpz_mat_entry(closest, 0, j));
     }
-
     _sort_rows_desc(reduced);
+    if (fnvcrack_interrupted()) {
+        result = ENUMERATE_SOLVER_INTERRUPTED;
+        goto cleanup;
+    }
 
-    if (!enumerate_native_try(
-            reduced, base, lower_bounds, upper_bounds, (uint32_t)n, enum_bound, max_candidates, cb, cb_ctx, &result
-        )) {
-        int64_t* deltas = malloc((size_t)n * sizeof(*deltas));
-        if (!deltas) {
-            result = ENUMERATE_SOLVER_MEMORY_ERROR;
-            goto cleanup;
+    if (parallel) {
+        const uint64_t seed = enumerate_parallel_mix((uint64_t)fmpz_get_ui(rhs_mod) ^ ((uint64_t)n << 32) ^ enum_bound);
+        if (!enumerate_native_parallel_try(
+                reduced,
+                base,
+                lower_bounds,
+                upper_bounds,
+                (uint32_t)n,
+                enum_bound,
+                max_candidates,
+                threads,
+                seed,
+                cb,
+                worker_contexts,
+                worker_context_size,
+                &result
+            )) {
+            result = enumerate_fmpz_parallel_prepared(
+                reduced,
+                base,
+                lower_bounds,
+                upper_bounds,
+                (uint32_t)n,
+                enum_bound,
+                max_candidates,
+                threads,
+                seed,
+                cb,
+                worker_contexts,
+                worker_context_size
+            );
         }
-        fmpz_mat_t tail_abs, fit_min, fit_max;
-        fmpz_mat_init(tail_abs, n + 1, n);
-        fmpz_mat_init(fit_min, n + 1, n);
-        fmpz_mat_init(fit_max, n + 1, n);
-        _build_tail_abs(tail_abs, reduced, enum_bound);
-        _build_fit_bounds(fit_min, fit_max, tail_abs, lower_bounds, upper_bounds);
-        fmpz_t scratch_numerator, scratch_quotient;
-        fmpz_init(scratch_numerator);
-        fmpz_init(scratch_quotient);
-        enum_search_t search_ctx = {
-            .basis = reduced,
-            .fit_min = fit_min,
-            .fit_max = fit_max,
-            .current = base,
-            .scratch_numerator = scratch_numerator,
-            .scratch_quotient = scratch_quotient,
-            .cb = cb,
-            .cb_ctx = cb_ctx,
-            .deltas = deltas,
-            .dim = (uint32_t)n,
-            .enum_bound = enum_bound,
-            .max_candidates = max_candidates,
-            .result = ENUMERATE_SOLVER_DONE,
-        };
-        if (_can_still_fit(&search_ctx, 0)) {
-            _search(&search_ctx, 0);
-        }
-
-        result = search_ctx.result;
-        fmpz_clear(scratch_quotient);
-        fmpz_clear(scratch_numerator);
-        fmpz_mat_clear(fit_max);
-        fmpz_mat_clear(fit_min);
-        fmpz_mat_clear(tail_abs);
-        free(deltas);
+    } else if (!enumerate_native_try(
+                   reduced,
+                   base,
+                   lower_bounds,
+                   upper_bounds,
+                   (uint32_t)n,
+                   enum_bound,
+                   max_candidates,
+                   cb,
+                   worker_contexts,
+                   &result
+               )) {
+        result = _enumerate_fmpz_serial_prepared(
+            reduced, base, lower_bounds, upper_bounds, (uint32_t)n, enum_bound, max_candidates, cb, worker_contexts
+        );
     }
 
 cleanup:
@@ -472,4 +783,49 @@ cleanup:
     fmpz_clear(rhs_mod);
     fmpz_clear(inv);
     return result;
+}
+
+enumerate_solver_result enumerate_bounded_mod(
+    const fmpz_mat_t coeffs,
+    const fmpz_t rhs,
+    const fmpz_t modulus,
+    const int64_t* lower_bounds,
+    const int64_t* upper_bounds,
+    uint32_t enum_bound,
+    uint64_t max_candidates,
+    enumerate_solution_cb cb,
+    void* cb_ctx
+) {
+    return _enumerate_bounded_mod_impl(
+        coeffs, rhs, modulus, lower_bounds, upper_bounds, enum_bound, max_candidates, 1, cb, cb_ctx, 0, false
+    );
+}
+
+enumerate_solver_result enumerate_bounded_mod_parallel(
+    const fmpz_mat_t coeffs,
+    const fmpz_t rhs,
+    const fmpz_t modulus,
+    const int64_t* lower_bounds,
+    const int64_t* upper_bounds,
+    uint32_t enum_bound,
+    uint64_t max_candidates,
+    uint32_t threads,
+    enumerate_solution_cb cb,
+    void* worker_contexts,
+    size_t worker_context_size
+) {
+    return _enumerate_bounded_mod_impl(
+        coeffs,
+        rhs,
+        modulus,
+        lower_bounds,
+        upper_bounds,
+        enum_bound,
+        max_candidates,
+        threads,
+        cb,
+        worker_contexts,
+        worker_context_size,
+        true
+    );
 }
