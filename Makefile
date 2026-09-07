@@ -26,7 +26,7 @@ OBJECTS = $(SOURCES:.c=.o)
 
 all: build
 lock-native:
-	uvx --from 'conda-lock==4.0.2' conda-lock lock --file native-deps.yml --kind explicit --filename-template 'native-{platform}.conda.lock'
+	uvx --from 'conda-lock==4.0.2' conda-lock lock --file .github/ci/native-deps.yml --kind explicit --filename-template '.github/ci/native-{platform}.conda.lock'
 
 build: $(TARGET)
 

@@ -97,7 +97,7 @@ jobs:
             /tmp/bin/micromamba --no-rc create --yes \
               --root-prefix /tmp/micromamba-root \
               --prefix /opt/fnvcrack-deps \
-              --file {project}/native-linux-64.conda.lock
+              --file {project}/.github/ci/native-linux-64.conda.lock
             test -f /opt/fnvcrack-deps/include/flint/flint.h
             test -f /opt/fnvcrack-deps/lib/libflint.so
             ldd_output="$(ldd /opt/fnvcrack-deps/lib/libflint.so)"
@@ -129,7 +129,7 @@ jobs:
         id: native-deps
         uses: mamba-org/setup-micromamba@f457c30a868e4760d3a6fcea5f25dc655b8edf39 # v3.2.1
         with:
-          environment-file: native-win-64.conda.lock
+          environment-file: .github/ci/native-win-64.conda.lock
           environment-name: fnvcrack-deps
           micromamba-version: "2.9.0-0"
           init-shell: none
