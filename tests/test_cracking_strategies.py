@@ -280,6 +280,28 @@ class CrackingStrategiesTestCase(CrackAssertionsMixin, unittest.TestCase):
                 result = ctx.crack(target, crack_len=3, enum_bound=15)
                 self.assertCracked(result, target, ctx)
 
+    def test_stable_low_state_bounds_preserve_all_matches(self):
+        for allowed in (bytes(range(8)), bytes(range(0, 8, 2))):
+            ctx = CrackContext(offset_basis=5, prime=3, bit_length=3, valid_chars=allowed)
+            expected = {target: set() for target in range(8)}
+            for unknown in itertools.product(allowed, repeat=3):
+                value = bytes(unknown)
+                expected[fnv(value, 5, 3, 3)].add(value)
+
+            for target, matches in expected.items():
+                for threads in (1, 4):
+                    with self.subTest(allowed=allowed, target=target, threads=threads):
+                        seen = set()
+                        result = ctx.crack(
+                            target,
+                            crack_len=3,
+                            enum_bound=255,
+                            callback=lambda candidate: seen.add(candidate) or False,
+                            threads=threads,
+                        )
+                        self.assertEqual(result.status, CrackStatus.FAILED)
+                        self.assertEqual(seen, matches)
+
     def test_callback_rejects_then_accepts_verified_candidate(self):
         ctx = collision_context()
         seen = []

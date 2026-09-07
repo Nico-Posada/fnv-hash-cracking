@@ -231,6 +231,11 @@ lattice for the unknown bytes, reduces the basis with FLINT, and runs bounded
 enumeration around the solver guess. Candidate bytes are constrained by
 `valid_chars`, and every returned result is verified against the target hash.
 
+Low-byte reachability tightens the delta bounds before enumeration. Stable
+reachability layers are reused, and transition scans start from the smaller
+reachable state set. These shortcuts preserve the same bounds and candidate
+verification.
+
 This is a constrained search rather than a guarantee that every preimage will
 be found. Wider character sets, longer unknown inputs, and larger enumeration
 bounds increase the work substantially.

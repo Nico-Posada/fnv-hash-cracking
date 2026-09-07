@@ -149,12 +149,17 @@ static CrackResult _low_state_delta_bounds(
     for (uint32_t i = 0; i < delta_len; ++i) {
         uint8_t* current = forward + (size_t)i * q;
         uint8_t* next = current + q;
-        for (uint32_t state = 0; state < q; ++state) {
-            if (!current[state]) {
-                continue;
-            }
-            for (uint32_t j = 0; j < char_count; ++j) {
-                next[((state ^ chars[j]) * prime) & mask] = 1;
+        // Equal layers are a fixed point; a full layer stays full for an odd prime.
+        if (i > 0 && (memcmp(current - q, current, q) == 0 || ((prime & 1) && !memchr(current, 0, q)))) {
+            memcpy(next, current, q);
+        } else {
+            for (uint32_t state = 0; state < q; ++state) {
+                if (!current[state]) {
+                    continue;
+                }
+                for (uint32_t j = 0; j < char_count; ++j) {
+                    next[((state ^ chars[j]) * prime) & mask] = 1;
+                }
             }
         }
         if (fnvcrack_interrupted()) {
@@ -177,15 +182,39 @@ static CrackResult _low_state_delta_bounds(
         int64_t hi = -(int64_t)mask;
         memset(previous, 0, q);
 
+        // With both state sets full, each byte c attains deltas -c and c.
+        if (!memchr(backward, 0, q) && !memchr(reachable, 0, q)) {
+            lower_bounds[i - 1] = -(int64_t)chars[char_count - 1];
+            upper_bounds[i - 1] = chars[char_count - 1];
+            if (fnvcrack_interrupted()) {
+                free(forward);
+                return INTERRUPTED;
+            }
+            continue;
+        }
+
+        uint8_t xored_reachable[256];
+        uint32_t forward_count = 0, backward_count = 0;
         for (uint32_t state = 0; state < q; ++state) {
-            if (!reachable[state]) {
+            xored_reachable[state] = backward[(state * prime) & mask];
+            forward_count += reachable[state];
+            backward_count += xored_reachable[state];
+        }
+        // XOR is symmetric, so scan transitions from the smaller state set.
+        const bool reverse = backward_count < forward_count;
+        const uint8_t* from = reverse ? xored_reachable : reachable;
+        const uint8_t* to = reverse ? reachable : xored_reachable;
+        for (uint32_t value = 0; value < q; ++value) {
+            if (!from[value]) {
                 continue;
             }
             for (uint32_t j = 0; j < char_count; ++j) {
-                const uint32_t xored = state ^ chars[j];
-                if (!backward[(xored * prime) & mask]) {
+                const uint32_t other = value ^ chars[j];
+                if (!to[other]) {
                     continue;
                 }
+                const uint32_t state = reverse ? other : value;
+                const uint32_t xored = reverse ? value : other;
                 const int64_t delta = (int64_t)xored - (int64_t)state;
                 if (delta < lo) {
                     lo = delta;
