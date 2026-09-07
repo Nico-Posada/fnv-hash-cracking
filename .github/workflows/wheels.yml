@@ -1,0 +1,328 @@
+name: Wheels
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+  release:
+    types:
+      - published
+  workflow_dispatch:
+  schedule:
+    - cron: "0 8 1 * *"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: wheels-${{ github.workflow }}-${{ github.event_name }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name != 'release' }}
+
+jobs:
+  test:
+    name: Python ${{ matrix.python-version }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version:
+          - "3.11"
+          - "3.12"
+          - "3.13"
+          - "3.14"
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Set up Python
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      - name: Set up uv
+        uses: astral-sh/setup-uv@c771a70e6277c0a99b617c7a806ffedaca235ff9 # v9.0.0
+        with:
+          version: "0.12.5"
+          enable-cache: true
+          prune-cache: true
+
+      - name: Install native dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y build-essential libgmp-dev libflint-dev
+
+      - name: Test source package
+        run: uv run --python ${{ matrix.python-version }} --group dev pytest
+
+  build-linux-wheels:
+    name: manylinux wheels
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Resolve micromamba release
+        shell: bash
+        run: |
+          set -euo pipefail
+          version=2.9.0
+          basename="linux-64/micromamba-$version-0.tar.bz2"
+          curl -fsSL "https://api.anaconda.org/release/conda-forge/micromamba/$version" |
+            jq -er --arg basename "$basename" '
+              .distributions[]
+              | select(.basename == $basename)
+              | "MICROMAMBA_URL=https:\(.download_url)\nMICROMAMBA_SHA256=\(.sha256)"
+            ' >> "$GITHUB_ENV"
+
+      - name: Build wheels
+        uses: pypa/cibuildwheel@1828c10ab37f080699c7b81cea34097c684a7074 # v4.2.0
+        env:
+          CIBW_ENVIRONMENT_PASS_LINUX: MICROMAMBA_URL MICROMAMBA_SHA256
+          CIBW_BEFORE_ALL_LINUX: |
+            set -eux
+            archive=/tmp/micromamba.tar.bz2
+            curl -fsSL "$MICROMAMBA_URL" -o "$archive"
+            printf '%s  %s\n' "$MICROMAMBA_SHA256" "$archive" | sha256sum --check -
+            tar -xjf "$archive" -C /tmp bin/micromamba
+            /tmp/bin/micromamba --no-rc create --yes \
+              --root-prefix /tmp/micromamba-root \
+              --prefix /opt/fnvcrack-deps \
+              --file {project}/.github/ci/native-linux-64.conda.lock
+            test -f /opt/fnvcrack-deps/include/flint/flint.h
+            test -f /opt/fnvcrack-deps/lib/libflint.so
+            ldd_output="$(ldd /opt/fnvcrack-deps/lib/libflint.so)"
+            printf '%s\n' "$ldd_output"
+            ! printf '%s\n' "$ldd_output" | grep -q 'not found'
+            rm -rf "$archive" /tmp/bin /tmp/micromamba-root
+        with:
+          extras: uv
+          output-dir: wheelhouse
+
+      - name: Upload wheel artifacts
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: fnvcrack-manylinux-wheels
+          path: wheelhouse/*.whl
+          retention-days: 7
+
+  build-windows-wheels:
+    name: Windows AMD64 wheels
+    runs-on: windows-2025-vs2026
+    timeout-minutes: 120
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Install native dependencies
+        id: native-deps
+        uses: mamba-org/setup-micromamba@f457c30a868e4760d3a6fcea5f25dc655b8edf39 # v3.2.1
+        with:
+          environment-file: .github/ci/native-win-64.conda.lock
+          environment-name: fnvcrack-deps
+          micromamba-version: "2.9.0-0"
+          init-shell: none
+
+
+      - name: Build wheels
+        uses: pypa/cibuildwheel@1828c10ab37f080699c7b81cea34097c684a7074 # v4.2.0
+        env:
+          FNVCRACK_DEPS: ${{ steps.native-deps.outputs.environment-path }}/Library
+        with:
+          extras: uv
+          output-dir: wheelhouse
+
+      - name: Upload wheel artifacts
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: fnvcrack-windows-amd64-wheels
+          path: wheelhouse/*.whl
+          retention-days: 7
+
+  build-macos-wheels:
+    name: macOS ${{ matrix.arch }} wheels
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 90
+
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: macos-15-intel
+            arch: x86_64
+            deployment_target: "15.0"
+          - runner: macos-15
+            arch: arm64
+            deployment_target: "15.0"
+
+    env:
+      CIBW_ARCHS_MACOS: ${{ matrix.arch }}
+      MACOSX_DEPLOYMENT_TARGET: ${{ matrix.deployment_target }}
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Build wheels
+        uses: pypa/cibuildwheel@1828c10ab37f080699c7b81cea34097c684a7074 # v4.2.0
+        with:
+          extras: uv
+          output-dir: wheelhouse
+
+      - name: Upload wheel artifacts
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: fnvcrack-macos-${{ matrix.arch }}-wheels
+          path: wheelhouse/*.whl
+          retention-days: 7
+
+  build-sdist:
+    name: source distribution
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Set up Python
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.14"
+
+      - name: Set up uv
+        uses: astral-sh/setup-uv@c771a70e6277c0a99b617c7a806ffedaca235ff9 # v9.0.0
+        with:
+          version: "0.12.5"
+          enable-cache: true
+          prune-cache: true
+
+      - name: Build source distribution
+        run: uv build --sdist --out-dir dist --no-sources
+
+      - name: Upload source artifact
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: fnvcrack-sdist
+          path: dist/*.tar.gz
+          retention-days: 7
+
+  test-wheels:
+    name: Test ${{ matrix.name }} wheel
+    needs:
+      - build-linux-wheels
+      - build-macos-wheels
+      - build-windows-wheels
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 20
+
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: manylinux x86_64
+            runner: ubuntu-24.04
+            artifact: fnvcrack-manylinux-wheels
+          - name: Windows AMD64
+            runner: windows-2025-vs2026
+            artifact: fnvcrack-windows-amd64-wheels
+          - name: macOS x86_64
+            runner: macos-15-intel
+            artifact: fnvcrack-macos-x86_64-wheels
+          - name: macOS ARM64
+            runner: macos-15
+            artifact: fnvcrack-macos-arm64-wheels
+
+    steps:
+      - name: Download wheel artifact
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: ${{ matrix.artifact }}
+          path: wheelhouse
+
+      - name: Set up Python
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.14"
+
+      - name: Install wheel without an index
+        run: python -m pip install --no-index --find-links wheelhouse fnvcrack
+
+      - name: Check installed dependencies
+        run: python -m pip check
+
+  test-sdist:
+    name: Test source distribution
+    needs:
+      - build-sdist
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+
+    steps:
+      - name: Download source artifact
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: fnvcrack-sdist
+          path: dist
+
+      - name: Set up Python
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.14"
+
+      - name: Install native dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y build-essential libgmp-dev libflint-dev pkg-config
+
+      - name: Install source distribution
+        run: |
+          python -m venv .venv
+          .venv/bin/python -m pip install dist/*.tar.gz
+
+  publish-pypi:
+    name: publish to PyPI
+    if: github.event_name == 'release' && github.event.action == 'published'
+    needs:
+      - test
+      - test-sdist
+      - test-wheels
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    permissions:
+      contents: read
+      id-token: write
+    environment:
+      name: pypi
+      url: https://pypi.org/p/fnvcrack
+
+    steps:
+      - name: Download release artifacts
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          pattern: fnvcrack-*
+          path: dist
+          merge-multiple: true
+
+      - name: Set up uv
+        uses: astral-sh/setup-uv@c771a70e6277c0a99b617c7a806ffedaca235ff9 # v9.0.0
+        with:
+          version: "0.12.5"
+
+      - name: Publish to PyPI
+        run: uv publish dist/*

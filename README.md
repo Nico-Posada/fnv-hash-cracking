@@ -1,164 +1,276 @@
 # fnv-hash-cracking
 
-Crack hashes or find collisions for hashes hashed with the [FNV-1a](https://en.wikipedia.org/wiki/Fowler–Noll–Vo_hash_function#FNV-1a_hash) algorithm without full brute force.
+[![Wheels](https://github.com/Nico-Posada/fnv-hash-cracking/actions/workflows/wheels.yml/badge.svg)](https://github.com/Nico-Posada/fnv-hash-cracking/actions/workflows/wheels.yml) [![Python 3.11-3.14](https://img.shields.io/badge/python-3.11%20%7C%203.12%20%7C%203.13%20%7C%203.14-blue.svg)](https://www.python.org/downloads/)
 
-This implementation uses lattice-based techniques with LLL reduction via the FLINT library to efficiently crack FNV-1a hashes, supporting both standard 64-bit hashes and arbitrary-precision variants.
+Crack hashes or find collisions for data hashed with the
+[FNV-1a](https://en.wikipedia.org/wiki/Fowler%E2%80%93Noll%E2%80%93Vo_hash_function#FNV-1a_hash)
+algorithm without exhaustive search.
+
+This implementation uses bounded lattice enumeration with FLINT-backed
+reduction to efficiently crack FNV-1a hashes. It supports standard 64-bit
+hashes, custom FNV parameters, and arbitrary-precision variants.
+
+FNV-1a is not a cryptographic hash. This project is intended for reverse
+engineering, data recovery, collision research, and similar work involving
+known FNV-1a parameters.
 
 ## Credits
 
-Huge thank you to [ConnorM](https://connor-mccartney.github.io) for his [incredible writeup](https://connor-mccartney.github.io/cryptography/other/Trying-to-crack-COD-FNV-hashes) and writing the original Python proof of concept on which this is based. He does some incredible work with cryptography and his writeups are worth a read.
+Huge thank you to [Connor McCartney](https://connor-mccartney.github.io) for
+his [writeup](https://connor-mccartney.github.io/cryptography/other/Trying-to-crack-COD-FNV-hashes)
+and the original Python proof of concept on which this project is based. I'd also
+like to thank Blupper for his work on [linineq](https://github.com/TheBlupper/linineq)
+as a lot of the ideas from that are used here as well.
 
 ## Requirements
 
-This project requires the following libraries:
-- [GMP](https://gmplib.org) - GNU Multiple Precision Arithmetic Library
-- [FLINT](https://flintlib.org) - Fast Library for Number Theory
+The Python package supports Python 3.11, 3.12, 3.13, 3.14, and the following:
 
-### Installation
+- Linux x86_64
+- Windows AMD64
+- macOS x86_64
+- macOS arm64
 
-#### Ubuntu and Debian
+## Installation
+
+Install the package using pip or your package manager of choice (as long as it can
+pull from PyPI)
+
 ```bash
-sudo apt install build-essential libgmp-dev libflint-dev -y
+pip install fnvcrack
 ```
 
-For other platforms or building from source, consult the [GMP documentation](https://gmplib.org/manual/) and [FLINT documentation](https://flintlib.org/doc/).
+### Examples
 
-## Building
+The Python package provides an easy to use API for standard and custom FNV-1a
+hashes.
 
-Clone the repository and build the project:
+More runnable demos are available in the [`examples/`](examples/) directory.
+
+#### Basic Example
+
+```python
+from fnvcrack import CrackContext
+
+target_hash = 0x25DA8C1836A8D66D
+ctx = CrackContext(valid_chars=b"abcdefghijklmnopqrstuvwxyz")
+# `crack_len` is the number of unknown bytes. Known prefixes
+# and suffixes do not count toward it.
+result = ctx.crack(target_hash, crack_len=8)
+
+if result.ok:
+    print(result.value)
+```
+
+This prints:
+
+```text
+b'abcdefgh'
+```
+
+
+#### Known Prefixes and Suffixes
+
+```python
+ctx = CrackContext(
+    prefix=b"archive/",
+    suffix=b".bin",
+    valid_chars=b"0123456789abcdef",
+)
+result = ctx.crack(target_hash, crack_len=8)
+```
+
+#### Unknown Length
+
+```python
+# Set `incremental=True` to search every unknown length from 1 through `crack_len`
+result = ctx.crack(target_hash, crack_len=12, incremental=True)
+```
+
+#### Multithreaded Cracking
+
+Set `threads` above `1` to enumerate one shared lattice with native workers:
+
+```python
+result = ctx.crack(target_hash, crack_len=8, threads=4)
+```
+
+The default is `threads=1`. The value is a maximum worker count for one shared
+lattice enumeration per exact search length. Callbacks work as normal but order
+is unspecified.
+
+> [!NOTE]
+> Use this for longer searches. Short searches (<10 chars) may be slower due
+> to worker and scheduling overhead.
+
+#### Enumeration Limits
+
+Use `enum_bound` to control the local search radius around the lattice
+solution. Larger values search more candidates but can be much slower.
+
+```python
+result = ctx.crack(
+    target_hash,
+    crack_len=8,
+    enum_bound=6,
+    max_enum_candidates=1_000_000,
+)
+```
+
+The default `enum_bound` is 4 as in my testing that seems to be the best middle
+ground for success rates and speed.
+
+#### Inspecting Multiple Matches
+
+By default, `crack()` stops at the first verified match. Pass a callback to
+inspect each complete verified candidate as `bytes`. A truthy return accepts
+that candidate and stops while a falsey return rejects it and continues:
+
+```python
+matches = []
+
+def accept(candidate: bytes) -> bool:
+    matches.append(candidate)
+    return len(matches) == 10
+
+result = ctx.crack(target_hash, crack_len=8, callback=accept)
+```
+
+Returning false every time runs until the bounded search is exhausted.
+
+#### Batch Cracking
+
+`batch_crack()` cracks multiple targets in parallel and preserves their input
+order:
+
+```python
+from fnvcrack import CrackContext
+target_hashes = [
+    0x25DA8C1836A8D66D,
+    0x27E64FF62868579D,
+]
+
+if __name__ == "__main__":
+    ctx = CrackContext(valid_chars=b"abcdefghijklmnopqrstuvwxyz")
+    values = ctx.batch_crack(target_hashes, crack_len=8)
+```
+
+The `if __name__ == "__main__"` guard is required on platforms that use
+spawn-based multiprocessing.
+
+## C Usage
+
+The repository also exposes the underlying C API:
+
+```c
+#include <inttypes.h>
+#include <stdio.h>
+
+#include "context.h"
+#include "crack.h"
+
+int main(void) {
+    CREATE_CONTEXT(ctx);
+    if (!init_crack_ctx(
+            ctx,
+            UINT64_C(0xCBF29CE484222325),
+            UINT64_C(0x100000001B3),
+            64,
+            "abcdefghijklmnopqrstuvwxyz",
+            NULL,
+            NULL
+        )) {
+        return 1;
+    }
+
+    char_buffer result = {NULL, 0};
+    CrackResult status = crack_u64_with_len(
+        ctx,
+        UINT64_C(0x25DA8C1836A8D66D),
+        &result,
+        8
+    );
+
+    if (status == SUCCESS) {
+        printf("Cracked: %s\n", result.data);
+    }
+
+    clear_char_buffer(&result);
+    destroy_crack_ctx(ctx);
+    return status == SUCCESS ? 0 : 1;
+}
+```
+
+## Development
+
+Run the test suite:
+
+```bash
+uv run --locked --group dev pytest
+```
+
+Build the Python extension in place:
+
+```bash
+make build-pyext
+```
+
+Run Python and native C coverage:
+
+```bash
+make coverage-c
+```
+
+Run the benchmark CLI:
+
+```bash
+uv run --locked --group benchmark python benchmarking/bench.py perf \
+    -p '[a-z]{8}' -c '[a-z]' -n 100 -b 4 -m 0 -I
+```
+
+The Wheels workflow builds and tests CPython 3.11 through 3.14 on Linux,
+Windows, and macOS. The Linux and Windows wheel builds consume committed
+native dependency locks. Regenerate both only when the FLINT specification
+changes:
+
+```bash
+make lock-native
+```
+
+## Building From Source
+
+Building from source requires a C11 compiler, `pkg-config`, and
+[FLINT](https://flintlib.org). FLINT depends on GMP and MPFR, which are
+installed automatically by the package managers below.
+
+### Ubuntu and Debian
+
+```bash
+sudo apt install -y build-essential pkg-config libflint-dev
+```
+
+### macOS with Homebrew
+
+```bash
+brew install flint pkgconf
+```
+
+The source build reads FLINT's `pkg-config` metadata, which supplies the
+include and library directories for FLINT, GMP, and MPFR. For a nonstandard
+FLINT installation, add the directory containing `flint.pc` to
+`PKG_CONFIG_PATH`.
+
+Clone the repository and install the development environment:
 
 ```bash
 git clone https://github.com/Nico-Posada/fnv-hash-cracking.git
 cd fnv-hash-cracking
+uv sync --group dev
+```
+
+To build the standalone C example:
+
+```bash
 make
+./main
 ```
-
-This will produce a `main` executable which runs a few examples of cracking different types of FNV-1a hashes.
-
-## Usage
-
-The library provides a flexible API for cracking FNV-1a hashes with known or unknown string lengths:
-
-### Basic Example (64-bit)
-
-```c
-// example from src/main.c
-
-#include "context.h"
-#include "crack.h"
-
-CREATE_CONTEXT(ctx);
-init_crack_ctx(
-    ctx,
-    0xCBF29CE484222325,  // FNV-1a 64-bit offset basis
-    0x100000001B3,        // FNV-1a 64-bit prime
-    64,                   // bit size
-    "abcdefghijklmnopqrstuvwxyz",  // characters to brute force
-    "abcdefghijklmnopqrstuvwxyz",  // valid characters in solution
-    "prefix_",            // known prefix (or NULL)
-    "_suffix"             // known suffix (or NULL)
-);
-
-char_buffer result = {NULL, 0}; // buf, size (keep as NULL, 0) when initializing
-uint64_t target_hash = 0x1234567890ABCDEF;
-
-// Crack with known length
-// 13 is the expected length of the string (including prefix/suffix)
-// 2 is the number of chars to brute
-CrackResult status = crack_u64_with_len(ctx, target_hash, &result, 13, 2);
-
-// Or search across lengths
-// 10 is the max string length to search for, 8 is the maximum crack size,
-// so if it can't find a string of length <= 8 then it will begin adding brute force to the search
-CrackResult status = crack_u64(ctx, target_hash, &result, 10, 8);
-
-if (status == SUCCESS) {
-    printf("Cracked: %s\n", result.data);
-}
-
-clear_char_buffer(&result);
-destroy_crack_ctx(ctx);
-```
-
-### Arbitrary Precision Example
-
-For non-standard FNV-1a implementations with custom parameters:
-
-```c
-// example from src/main.c
-
-#include <flint/fmpz.h>
-#include "context.h"
-#include "crack.h"
-
-// create fmpz numbers like normal
-fmpz_t offset_basis, prime, target;
-fmpz_init(offset_basis);
-fmpz_init(prime);
-fmpz_init(target);
-fmpz_set_str(offset_basis, "86478568332086667988955226522744024433416290808708427009300709942571393030379", 10);
-fmpz_set_str(prime, "58212954222403626346155684772977216669103315464820228336508867619615003388891", 10);
-fmpz_set_str(hashed, "923278209713176653012807450506579337424686596606979155232335733448961331039798473007051981204278", 10);
-
-CREATE_CONTEXT(ctx);
-init_crack_fmpz_ctx(
-    ctx,
-    offset_basis,
-    prime,
-    320,  // bit size
-    "0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ!\"#$%&'()*+,-./:;<=>?@[\\]^_`{|}~ ",
-    "0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ!\"#$%&'()*+,-./:;<=>?@[\\]^_`{|}~ ",
-    NULL,  // no known prefix
-    NULL   // no known suffix
-);
-
-char_buffer result = {NULL, 0};
-// We know the string is 37 chars long.
-// We don't want to brute force any chars because of how large the modulus is (2^320)
-CrackResult status = crack_fmpz_with_len(ctx, target, &result, 37, 0);
-
-if (status == SUCCESS) {
-    printf("Cracked: %s\n", result.data);
-}
-
-// clear fmpz vars like normal
-fmpz_clear(offset_basis);
-fmpz_clear(prime);
-fmpz_clear(target);
-
-clear_char_buffer(&result);
-destroy_crack_ctx(ctx);
-```
-
-## API Overview
-
-### Context Management
-- `init_crack_ctx()` - Initialize context for 64-bit FNV-1a
-- `init_crack_fmpz_ctx()` - Initialize context for arbitrary precision FNV-1a
-- `destroy_crack_ctx()` - Clean up context resources
-
-### Cracking Functions
-- `crack_u64_with_len()` - Crack 64-bit hash with known total length
-- `crack_u64()` - Crack 64-bit hash searching across length range
-- `crack_fmpz_with_len()` - Crack arbitrary precision hash with known length
-- `crack_fmpz()` - Crack arbitrary precision hash searching across lengths
-
-### Parameters
-- `expected_len` - Total length of the hashed string (including prefix/suffix)
-- `brute_len` - Number of characters to brute force (0 for pure lattice attack)
-- `max_search_len` - Maximum string length to search when length is unknown
-- `max_crack_len` - Maximum characters in the "unknown" portion to attempt
-
-## How It Works
-
-This tool uses lattice reduction (LLL algorithm via FLINT) to transform the FNV-1a hash inversion problem into a closest vector problem. By constructing a carefully weighted lattice, the algorithm can efficiently find preimages without exhaustive brute force, especially when parts of the string are known (prefix/suffix) or the character set is constrained.
-
-For very short unknown sections or when the lattice attack alone is insufficient, a hybrid approach combines lattice reduction with limited brute forcing over the specified character set.
-
-## Python Extension
-
-The [python extension](./python) for this is still WIP. It's usable at the moment for linux distros, but it's not very stable. I will work on improving this in the coming months.
-
-## License
-
-See LICENSE file for details.

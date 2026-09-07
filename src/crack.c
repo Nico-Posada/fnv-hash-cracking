@@ -3,524 +3,1023 @@
 #include <flint/flint.h>
 #include <flint/fmpz.h>
 #include <flint/fmpz_mat.h>
-#include <flint/fmpz_lll.h>
 
 #include "crack.h"
+#include "interrupt.h"
 #include "inverse.h"
-#include "brute_gen.h"
+#include "enumerate_parallel.h"
 #include "fnv.h"
 
-inline static CrackResult _check_prereqs(
-    const context_t ctx,
-    const uint32_t brute_len
-) {
-    if (!is_initialized(ctx)) {
-        return CONTEXT_UNINITIALIZED;
+inline static CrackResult _check_prereqs(const context_t ctx) {
+    if (fnvcrack_interrupted()) {
+        return INTERRUPTED;
     }
 
-    const char_buffer* brute_chars = get_brute_chars(ctx);
-    if ((!brute_chars->data || !brute_chars->length) && brute_len > 0) {
-        return MISSING_BRUTE_CHARS;
+    if (!is_initialized(ctx)) {
+        return CONTEXT_UNINITIALIZED;
     }
 
     return SUCCESS;
 }
 
-inline static int32_t _check_resulting_matrix(
-    const context_t ctx,
-    const fmpz_mat_t M,
-    const uint32_t dim,
-    const uint64_t new_hash,
-    const uint64_t prime,
-    char* ret_buf
+static bool _handle_candidate(
+    char_buffer prefix,
+    char_buffer cracked,
+    char_buffer suffix,
+    char_buffer* out_buffer,
+    crack_candidate_cb callback,
+    void* userdata,
+    bool* memory_error
 ) {
-    const uint32_t size = fmpz_mat_ncols(M);
-    for (uint32_t i = 0; i < dim; ++i) {
-        const slong row_last = fmpz_get_si(fmpz_mat_entry(M, i, size - 1));
-        if (row_last != -1 && row_last != 1) {
-            continue;
-        }
-
-        bool success = true;
-        const int64_t lo_hsh = new_hash;
-        const int64_t lo_p = prime;
-        int64_t a = lo_hsh;
-
-        for (uint32_t j = 1; j < size - 1; ++j) {
-            const int64_t cur = fmpz_get_si(fmpz_mat_entry(M, i, j)) * row_last;
-
-            const int64_t b = a;
-            a += cur;
-            const int64_t x = a ^ b;
-            if (x >= 256 || ctx->valid_chars[x] == 0) {
-                success = false;
-                break;
-            }
-
-            ret_buf[j - 1] = x;
-            a *= lo_p;
-        }
-
-        if (success) {
-            return i;
-        }
-    }
-
-    return -1;
-}
-
-inline static void _init_weights(
-    uint64_t* Q,
-    const uint32_t dim,
-    const uint64_t start,
-    const uint64_t mid,
-    const uint64_t end
-) {
-    Q[0] = (uint64_t)1 << start; // 2 ^ start
-    for (uint32_t i = 1; i < dim - 1; ++i) {
-        Q[i] = (uint64_t)1 << mid; // 2 ^ mid
-    }
-    Q[dim - 1] = (uint64_t)1 << end; // 2 ^ end
-}
-
-inline static bool _store_result_safe(
-    const char* prefix,
-    const size_t prefix_len,
-    const char* bruted,
-    const size_t bruted_len,
-    const char* cracked,
-    const size_t cracked_len,
-    const char* suffix,
-    const size_t suffix_len,
-    char** out_buffer,
-    size_t* out_buffer_len
-) {
-    const size_t total_len = prefix_len + bruted_len + cracked_len + suffix_len;
+    const size_t total_len = prefix.length + cracked.length + suffix.length;
     char* result_buf = malloc(total_len + 1);
     if (!result_buf) {
-        return false;
+        *memory_error = true;
+        return true;
     }
 
     size_t cur_off = 0;
-    memcpy(result_buf + cur_off, prefix, prefix_len);
-    cur_off += prefix_len;
-    memcpy(result_buf + cur_off, bruted, bruted_len);
-    cur_off += bruted_len;
-    memcpy(result_buf + cur_off, cracked, cracked_len);
-    cur_off += cracked_len;
-    memcpy(result_buf + cur_off, suffix, suffix_len);
-    cur_off += cracked_len;
+    if (prefix.length) {
+        memcpy(result_buf + cur_off, prefix.data, prefix.length);
+        cur_off += prefix.length;
+    }
+    if (cracked.length) {
+        memcpy(result_buf + cur_off, cracked.data, cracked.length);
+        cur_off += cracked.length;
+    }
+    if (suffix.length) {
+        memcpy(result_buf + cur_off, suffix.data, suffix.length);
+        cur_off += suffix.length;
+    }
 
-    *out_buffer = result_buf;
-    *out_buffer_len = total_len;
+    result_buf[cur_off] = 0;
+    char_buffer candidate = {result_buf, total_len};
+    if (callback && !callback(candidate, userdata)) {
+        free(result_buf);
+        return false;
+    }
+
+    *out_buffer = candidate;
     return true;
 }
 
-CrackResult crack_u64_with_len(
+inline static uint64_t _bit_mask_u64(const uint32_t bit_len) {
+    if (bit_len >= 64) {
+        return ~(uint64_t)0;
+    }
+    return ((uint64_t)1 << bit_len) - 1;
+}
+
+inline static void _init_modulus(fmpz_t MOD, const uint32_t bit_len) {
+    fmpz_zero(MOD);
+    fmpz_setbit(MOD, bit_len);
+}
+
+inline static uint64_t
+_reverse_suffix_u64(uint64_t target, char_buffer suffix, const uint64_t prime, const uint32_t bit_len) {
+    if (suffix.length == 0) {
+        return target;
+    }
+
+    const uint64_t inv_prime = inverse(prime, bit_len);
+    for (size_t i = suffix.length; i > 0; --i) {
+        target *= inv_prime;
+        target ^= (uint8_t)suffix.data[i - 1];
+        target &= _bit_mask_u64(bit_len);
+    }
+    return target;
+}
+
+inline static void _reverse_suffix_fmpz(
+    fmpz_t ntarget,
+    const fmpz_t target,
+    char_buffer suffix,
+    const fmpz_t prime,
+    const fmpz_t modulus,
+    const fmpz_t bit_mask
+) {
+    fmpz_set(ntarget, target);
+    if (suffix.length == 0) {
+        return;
+    }
+
+    fmpz_t inv_prime, cur_char;
+    fmpz_init(inv_prime);
+    fmpz_init(cur_char);
+
+    if (!fmpz_invmod(inv_prime, prime, modulus)) {
+        fmpz_zero(inv_prime);
+    }
+    for (size_t i = suffix.length; i > 0; --i) {
+        fmpz_set_ui(cur_char, (ulong)(uint8_t)suffix.data[i - 1]);
+        fmpz_mul(ntarget, ntarget, inv_prime);
+        fmpz_xor(ntarget, ntarget, cur_char);
+        fmpz_and(ntarget, ntarget, bit_mask);
+    }
+
+    fmpz_clear(cur_char);
+    fmpz_clear(inv_prime);
+}
+
+static CrackResult _low_state_delta_bounds(
+    const context_t ctx,
+    int64_t* lower_bounds,
+    int64_t* upper_bounds,
+    const uint32_t delta_len,
+    const uint32_t start,
+    const uint32_t target,
+    const uint32_t prime
+) {
+    const uint32_t q = (uint32_t)1 << (ctx->bits < 8 ? ctx->bits : 8);
+    const uint32_t mask = q - 1;
+    uint8_t chars[256];
+    uint32_t char_count = 0;
+    for (uint32_t c = 0; c < q; ++c) {
+        if (ctx->valid_chars[c]) {
+            chars[char_count++] = (uint8_t)c;
+        }
+    }
+
+    uint8_t* forward = calloc(((size_t)delta_len + 1) * q, sizeof(*forward));
+    if (!forward) {
+        return MEMORY_ERROR;
+    }
+    forward[start & mask] = 1;
+
+    for (uint32_t i = 0; i < delta_len; ++i) {
+        uint8_t* current = forward + (size_t)i * q;
+        uint8_t* next = current + q;
+        // Equal layers are a fixed point; a full layer stays full for an odd prime.
+        if (i > 0 && (memcmp(current - q, current, q) == 0 || ((prime & 1) && !memchr(current, 0, q)))) {
+            memcpy(next, current, q);
+        } else {
+            for (uint32_t state = 0; state < q; ++state) {
+                if (!current[state]) {
+                    continue;
+                }
+                for (uint32_t j = 0; j < char_count; ++j) {
+                    next[((state ^ chars[j]) * prime) & mask] = 1;
+                }
+            }
+        }
+        if (fnvcrack_interrupted()) {
+            free(forward);
+            return INTERRUPTED;
+        }
+    }
+
+    if (!forward[(size_t)delta_len * q + (target & mask)]) {
+        free(forward);
+        return FAILED;
+    }
+
+    uint8_t backward[256] = {0};
+    uint8_t previous[256];
+    backward[target & mask] = 1;
+    for (uint32_t i = delta_len; i > 0; --i) {
+        const uint8_t* reachable = forward + (size_t)(i - 1) * q;
+        int64_t lo = (int64_t)mask;
+        int64_t hi = -(int64_t)mask;
+        memset(previous, 0, q);
+
+        // With both state sets full, each byte c attains deltas -c and c.
+        if (!memchr(backward, 0, q) && !memchr(reachable, 0, q)) {
+            lower_bounds[i - 1] = -(int64_t)chars[char_count - 1];
+            upper_bounds[i - 1] = chars[char_count - 1];
+            if (fnvcrack_interrupted()) {
+                free(forward);
+                return INTERRUPTED;
+            }
+            continue;
+        }
+
+        uint8_t xored_reachable[256];
+        uint32_t forward_count = 0, backward_count = 0;
+        for (uint32_t state = 0; state < q; ++state) {
+            xored_reachable[state] = backward[(state * prime) & mask];
+            forward_count += reachable[state];
+            backward_count += xored_reachable[state];
+        }
+        // XOR is symmetric, so scan transitions from the smaller state set.
+        const bool reverse = backward_count < forward_count;
+        const uint8_t* from = reverse ? xored_reachable : reachable;
+        const uint8_t* to = reverse ? reachable : xored_reachable;
+        for (uint32_t value = 0; value < q; ++value) {
+            if (!from[value]) {
+                continue;
+            }
+            for (uint32_t j = 0; j < char_count; ++j) {
+                const uint32_t other = value ^ chars[j];
+                if (!to[other]) {
+                    continue;
+                }
+                const uint32_t state = reverse ? other : value;
+                const uint32_t xored = reverse ? value : other;
+                const int64_t delta = (int64_t)xored - (int64_t)state;
+                if (delta < lo) {
+                    lo = delta;
+                }
+                if (delta > hi) {
+                    hi = delta;
+                }
+                previous[state] = 1;
+            }
+        }
+
+        lower_bounds[i - 1] = lo;
+        upper_bounds[i - 1] = hi;
+        memcpy(backward, previous, q);
+        if (fnvcrack_interrupted()) {
+            free(forward);
+            return INTERRUPTED;
+        }
+    }
+
+    free(forward);
+    return SUCCESS;
+}
+
+static void _set_u64_coeffs(fmpz_mat_t coeffs, const uint64_t prime, const uint32_t nn) {
+    fmpz_set_ui(fmpz_mat_entry(coeffs, 0, nn - 1), (ulong)prime);
+    for (uint32_t i = nn - 1; i > 0; --i) {
+        fmpz_mul_ui(fmpz_mat_entry(coeffs, 0, i - 1), fmpz_mat_entry(coeffs, 0, i), (ulong)prime);
+    }
+}
+
+static bool _deltas_to_bytes_u64(
+    const context_t ctx,
+    const uint64_t start_hash,
+    const uint64_t prime,
+    const uint32_t bit_len,
+    const int64_t* deltas,
+    const uint32_t delta_len,
+    char* ret_buf,
+    uint64_t* end_hash
+) {
+    const uint64_t mask = _bit_mask_u64(bit_len);
+    uint64_t state = start_hash & mask;
+
+    for (uint32_t i = 0; i < delta_len; ++i) {
+        const uint64_t next = (state + (uint64_t)deltas[i]) & mask;
+        const uint64_t byte = next ^ state;
+        if (byte >= 256 || !ctx->valid_chars[byte]) {
+            return false;
+        }
+
+        ret_buf[i] = (char)byte;
+        state = (next * prime) & mask;
+    }
+
+    *end_hash = state;
+    return true;
+}
+
+static bool _deltas_to_bytes_fmpz(
+    const context_t ctx,
+    const fmpz_t start_hash,
+    const fmpz_t prime,
+    const fmpz_t modulus,
+    const fmpz_t bit_mask,
+    const int64_t* deltas,
+    const uint32_t delta_len,
+    char* ret_buf,
+    fmpz_t state,
+    fmpz_t next,
+    fmpz_t byte
+) {
+    fmpz_set(state, start_hash);
+
+    for (uint32_t i = 0; i < delta_len; ++i) {
+        fmpz_set(next, state);
+        fmpz_add_si(next, next, deltas[i]);
+        if (fmpz_sgn(next) < 0 || fmpz_cmp(next, modulus) >= 0) {
+            return false;
+        }
+
+        fmpz_xor(byte, next, state);
+        if (fmpz_cmp_ui(byte, (ulong)255) > 0) {
+            return false;
+        }
+
+        const uint64_t c = fmpz_get_ui(byte);
+        if (!ctx->valid_chars[c]) {
+            return false;
+        }
+
+        ret_buf[i] = (char)c;
+        fmpz_mul(state, next, prime);
+        fmpz_and(state, state, bit_mask);
+    }
+
+    return true;
+}
+
+typedef struct {
+    char_buffer value;
+    bool memory_error;
+} enum_output_t;
+
+static uint32_t _worker_count(uint32_t threads) {
+    return threads > ENUMERATE_PARALLEL_MAX_WORKERS ? ENUMERATE_PARALLEL_MAX_WORKERS : (threads ? threads : 1);
+}
+
+static CrackResult _collect_outputs(
+    void* contexts, size_t stride, uint32_t count, uint32_t winner, enumerate_solver_result result, char_buffer* output
+) {
+    uint32_t selected = UINT32_MAX;
+    bool memory_error = result == ENUMERATE_SOLVER_MEMORY_ERROR;
+    for (uint32_t i = 0; i < count; ++i) {
+        enum_output_t* current = (enum_output_t*)((char*)contexts + i * stride);
+        memory_error |= current->memory_error;
+        if (current->value.data && (selected == UINT32_MAX || i == winner)) {
+            selected = i;
+        }
+    }
+    for (uint32_t i = 0; i < count; ++i) {
+        enum_output_t* current = (enum_output_t*)((char*)contexts + i * stride);
+        if (i == selected) {
+            *output = current->value;
+        } else {
+            clear_char_buffer(&current->value);
+        }
+    }
+    if (selected != UINT32_MAX) {
+        return SUCCESS;
+    }
+    if (memory_error) {
+        return MEMORY_ERROR;
+    }
+    return result == ENUMERATE_SOLVER_INTERRUPTED ? INTERRUPTED : FAILED;
+}
+
+typedef struct {
+    enum_output_t output;
+    const struct _context_s* ctx;
+    uint64_t target;
+    uint64_t new_hash;
+    uint64_t prime;
+    uint32_t bit_len;
+    char_buffer prefix;
+    char_buffer suffix;
+    crack_candidate_cb callback;
+    void* userdata;
+    char* ret_buf;
+} enum_u64_cb_ctx_t;
+
+static bool _enum_u64_candidate(const int64_t* deltas, uint32_t delta_len, void* userdata) {
+    enum_u64_cb_ctx_t* cb_ctx = userdata;
+    uint64_t hash;
+    if (!_deltas_to_bytes_u64(
+            cb_ctx->ctx, cb_ctx->new_hash, cb_ctx->prime, cb_ctx->bit_len, deltas, delta_len, cb_ctx->ret_buf, &hash
+        )) {
+        return false;
+    }
+
+    hash = fnv_u64_with_len(cb_ctx->suffix, hash, cb_ctx->prime, cb_ctx->bit_len);
+    if (hash != cb_ctx->target) {
+        return false;
+    }
+
+    return _handle_candidate(
+        cb_ctx->prefix,
+        (char_buffer){cb_ctx->ret_buf, delta_len},
+        cb_ctx->suffix,
+        &cb_ctx->output.value,
+        cb_ctx->callback,
+        cb_ctx->userdata,
+        &cb_ctx->output.memory_error
+    );
+}
+
+static CrackResult _crack_u64_with_len_enumerate(
     context_t ctx,
     uint64_t target,
     char_buffer* out_buffer,
     const uint32_t expected_len,
-    const uint32_t brute_len
+    const uint32_t enum_bound,
+    const uint64_t max_enum_candidates,
+    uint32_t threads,
+    crack_candidate_cb callback,
+    void* userdata
 ) {
-    CrackResult prereq_chk = _check_prereqs(ctx, brute_len);
+    CrackResult prereq_chk = _check_prereqs(ctx);
     if (prereq_chk != SUCCESS) {
         return prereq_chk;
     }
 
-    // ctx vars that we access a lot and aren't changed
-    register const uint32_t bit_len = ctx->bits;
-    register const uint64_t prime = get_prime(ctx);
-    register const uint64_t offset_basis = get_offset_basis(ctx);
-    register const char* prefix = get_prefix(ctx)->data; if (!prefix) prefix = "";
-    register const char* suffix = get_suffix(ctx)->data; if (!suffix) suffix = "";
-    char_buffer* brute_chars = get_brute_chars(ctx);
-    
-    fmpz_t MOD; fmpz_init(MOD);
-    if (bit_len == 64) {
-        fmpz_set_uiui(MOD, /*hi =*/(ulong)1, /*lo =*/(ulong)0); // 2 ^ 64
-    }
-    else {
-        fmpz_set_ui(MOD, (uint64_t)1 << bit_len); // 2 ^ bit_len
+    const uint32_t bit_len = ctx->bits;
+    const uint64_t prime = get_prime(ctx);
+    const uint64_t offset_basis = get_offset_basis(ctx);
+    char_buffer prefix = *get_prefix(ctx);
+    char_buffer suffix = *get_suffix(ctx);
+
+    if (expected_len < prefix.length + suffix.length) {
+        return BAD_SEARCH_LENGTH;
     }
 
-    const size_t prefix_len = get_prefix(ctx)->length;
-    const size_t suffix_len = get_suffix(ctx)->length;
+    const uint32_t nn = expected_len - prefix.length - suffix.length;
 
-    const uint32_t nn = expected_len - brute_len - prefix_len - suffix_len;
-    const uint32_t dim = nn + 2;
+    const uint64_t new_hash = prefix.length ? fnv_u64_with_len(prefix, offset_basis, prime, bit_len)
+                                            : (offset_basis & _bit_mask_u64(bit_len));
 
-    register const uint64_t bit_mask = ~(uint64_t)0 >> (64 - bit_len);
-
-    uint64_t P = 1;
-    for (uint32_t i = 0; i < nn; ++i) {
-        P *= prime;
-    }
-    P &= bit_mask;
-
-    // using VLA instead of malloc
-    // TODO: allow the user to customize the weights
-    uint64_t Q[dim];
-    _init_weights(Q, dim, 12, 4, 10);
-    
-    // identity matrix but with an extra column on the left and extra row on the bottom
-    fmpz_mat_t _M;
-    fmpz_mat_init(_M, dim, dim);
-    for (uint32_t i = 0; i <= nn; ++i) {
-        fmpz_set_ui(fmpz_mat_entry(_M, i, i+1), (ulong)1);
-    }
-
-    // fill in extra column on the left
-    // (except second to last val)
-    for (uint32_t i = 0; i < nn; ++i) {
-        fmpz_ui_pow_ui(fmpz_mat_entry(_M, i, 0), prime, nn - i);
-    }
-    fmpz_set(fmpz_mat_entry(_M, dim - 1, 0), MOD);
-
-    // M *= Q (part 1)
-    // this should be done on every iteration, but since we only change one element in the M matrix
-    // on each iteration, we can precompute almost everything else
-    for (uint32_t x = 0; x < dim; ++x) {
-        const uint64_t Q_val = Q[x];
-        for (uint32_t y = 0; y < dim; ++y) {
-            fmpz* const data = fmpz_mat_entry(_M, y, x);
-            fmpz_mul_ui(data, data, Q_val);
+    if (nn == 0) {
+        uint64_t hash = fnv_u64_with_len(suffix, new_hash, prime, bit_len);
+        if (hash != target) {
+            return FAILED;
         }
-    }
 
-    // perform reverse of fnv algo to get hash without suffix applied
-    uint64_t ntarget = target;
-    if (suffix_len != 0) {
-        uint64_t inv_prime = inverse(prime, bit_len);
-        for (int32_t i = suffix_len - 1; i >= 0; --i) {
-            ntarget *= inv_prime;
-            ntarget ^= suffix[i];
+        bool memory_error = false;
+        if (!_handle_candidate(prefix, (char_buffer){NULL, 0}, suffix, out_buffer, callback, userdata, &memory_error)) {
+            return FAILED;
         }
+        return memory_error ? MEMORY_ERROR : SUCCESS;
     }
 
-    // temp buffer to store possible cracks
-    char ret_buf[dim];
-    memset(ret_buf, 0, dim);
+    const uint64_t ntarget = _reverse_suffix_u64(target, suffix, prime, bit_len);
 
-    // matrix that will take data from _M
-    fmpz_mat_t M;
-    fmpz_mat_init(M, dim, dim);
+    const uint32_t worker_count = _worker_count(threads);
+    const size_t buffer_size = (size_t)nn + 1;
+    if (buffer_size > SIZE_MAX / worker_count) {
+        return MEMORY_ERROR;
+    }
+    char* ret_buf = calloc(buffer_size * worker_count, 1);
+    int64_t* lower_bounds = NULL;
+    int64_t* upper_bounds = NULL;
+    fmpz_mat_t coeffs;
+    fmpz_t MOD, rhs, new_hash_z, ntarget_z;
+    fmpz_mat_init(coeffs, 1, nn);
+    fmpz_init(MOD);
+    fmpz_init(rhs);
+    fmpz_init(new_hash_z);
+    fmpz_init(ntarget_z);
 
-    // LLL config used for every iteration
-    fmpz_lll_t fl;
-    fmpz_lll_context_init_default(fl);
+    if (!ret_buf) {
+        fmpz_mat_clear(coeffs);
+        fmpz_clear(ntarget_z);
+        fmpz_clear(new_hash_z);
+        fmpz_clear(rhs);
+        fmpz_clear(MOD);
+        return MEMORY_ERROR;
+    }
 
-    // brute chars
-    brute_chars_t brute;
-    product(&brute, brute_chars->data, brute_chars->length, brute_len);
-
-    // var to store result to return
     CrackResult result = FAILED;
+    _init_modulus(MOD, bit_len);
+    fmpz_set_ui(ntarget_z, ntarget);
 
-    const uint64_t prefixed_hash = fnv_u64_with_len(prefix, prefix_len, offset_basis, prime, bit_len);
-    for (uint32_t i = 0; i < brute.total_entries; ++i) {
-        const char* cur = brute.buffer + i * brute.entry_length;
+    lower_bounds = malloc((size_t)nn * sizeof(*lower_bounds));
+    upper_bounds = malloc((size_t)nn * sizeof(*upper_bounds));
+    if (!lower_bounds || !upper_bounds) {
+        result = MEMORY_ERROR;
+        goto cleanup;
+    }
+    CrackResult bounds_result = _low_state_delta_bounds(ctx, lower_bounds, upper_bounds, nn, new_hash, ntarget, prime);
+    if (bounds_result != SUCCESS) {
+        result = bounds_result;
+        goto cleanup;
+    }
+    _set_u64_coeffs(coeffs, prime, nn);
 
-        // get the hash without the prefix applied
-        const uint64_t new_hash = fnv_u64_with_len(cur, brute.entry_length, prefixed_hash, prime, bit_len);
+    if (fnvcrack_interrupted()) {
+        result = INTERRUPTED;
+        goto cleanup;
+    }
 
-        const uint64_t m = (new_hash * P - ntarget) & bit_mask;
+    fmpz_set_ui(new_hash_z, new_hash);
+    fmpz_mul(rhs, new_hash_z, fmpz_mat_entry(coeffs, 0, 0));
+    fmpz_sub(rhs, ntarget_z, rhs);
+    fmpz_mod(rhs, rhs, MOD);
 
-        // create copy with (0, dim - 2) set
-        fmpz_mat_set(M, _M);
-        fmpz_set_ui(fmpz_mat_entry(M, dim - 2, 0), m);
+    enum_u64_cb_ctx_t cb_ctx = {
+        .ctx = ctx,
+        .target = target,
+        .new_hash = new_hash,
+        .prime = prime,
+        .bit_len = bit_len,
+        .prefix = prefix,
+        .suffix = suffix,
+        .callback = callback,
+        .userdata = userdata,
+        .ret_buf = ret_buf,
+    };
 
-        // M *= Q (part 2)
-        fmpz_mul_ui(fmpz_mat_entry(M, dim - 2, 0), fmpz_mat_entry(M, dim - 2, 0), Q[0]);
-
-        // M = M.LLL()
-        fmpz_lll_d(M, NULL, fl);
-
-        // M /= Q
-        for (uint32_t x = 0; x < dim; ++x) {
-            const uint64_t Q_val = Q[x];
-            for (uint32_t y = 0; y < dim; ++y) {
-                fmpz* const data = fmpz_mat_entry(M, y, x);
-                fmpz_divexact_ui(data, data, Q_val);
-            }
-        }
-
-        const int32_t idx = _check_resulting_matrix(
-            ctx, M, dim, new_hash, prime, ret_buf
+    enum_u64_cb_ctx_t* workers = worker_count > 1 ? calloc(worker_count, sizeof(*workers)) : &cb_ctx;
+    if (!workers) {
+        result = MEMORY_ERROR;
+        goto cleanup;
+    }
+    for (uint32_t i = 0; i < worker_count; ++i) {
+        workers[i] = cb_ctx;
+        workers[i].ret_buf = ret_buf + i * buffer_size;
+    }
+    enumerate_solver_result enum_result;
+    if (threads > 1) {
+        enum_result = enumerate_bounded_mod_parallel(
+            coeffs,
+            rhs,
+            MOD,
+            lower_bounds,
+            upper_bounds,
+            enum_bound,
+            max_enum_candidates,
+            threads,
+            _enum_u64_candidate,
+            workers,
+            sizeof(*workers)
         );
-
-        if (idx >= 0) {
-            // confirm the hash is correct, false positives are possible
-            uint64_t hash = fnv_u64_with_len(ret_buf, nn, new_hash, prime, bit_len);
-            hash = fnv_u64_with_len(suffix, suffix_len, hash, prime, bit_len);
-
-            if (hash == target) {
-                char* output;
-                size_t output_len;
-                if (!_store_result_safe(
-                    prefix, prefix_len,
-                    cur, brute.entry_length,
-                    ret_buf, nn,
-                    suffix, suffix_len,
-                    &output, &output_len)) {
-                    result = MEMORY_ERROR;
-                    goto cleanup;
-                }
-
-                out_buffer->data = output;
-                out_buffer->length = output_len;
-                result = SUCCESS;
-                goto cleanup;
-            }
-        }
+    } else {
+        enum_result = enumerate_bounded_mod(
+            coeffs, rhs, MOD, lower_bounds, upper_bounds, enum_bound, max_enum_candidates, _enum_u64_candidate, workers
+        );
+    }
+    result = _collect_outputs(
+        workers,
+        sizeof(*workers),
+        worker_count,
+        threads > 1 ? enumerate_parallel_winning_worker() : 0,
+        enum_result,
+        out_buffer
+    );
+    if (worker_count > 1) {
+        free(workers);
     }
 
 cleanup:
-    destroy_product(&brute);
-    fmpz_mat_clear(_M);
-    fmpz_mat_clear(M);
+    free(upper_bounds);
+    free(lower_bounds);
+    free(ret_buf);
+    fmpz_clear(ntarget_z);
+    fmpz_clear(new_hash_z);
+    fmpz_clear(rhs);
     fmpz_clear(MOD);
+    fmpz_mat_clear(coeffs);
     return result;
 }
 
-///////////////////////////////////////////////////////
-///////////////////////////////////////////////////////
-///////////////////////////////////////////////////////
+typedef struct {
+    enum_output_t output;
+    const struct _context_s* ctx;
+    const fmpz* target;
+    const fmpz* new_hash;
+    const fmpz* prime;
+    const fmpz* modulus;
+    const fmpz* bit_mask;
+    char_buffer prefix;
+    char_buffer suffix;
+    crack_candidate_cb callback;
+    void* userdata;
+    char* ret_buf;
+    fmpz_t hash;
+    fmpz_t state;
+    fmpz_t next;
+    fmpz_t byte;
+} enum_fmpz_cb_ctx_t;
 
-CrackResult crack_fmpz_with_len(
+static bool _enum_fmpz_candidate(const int64_t* deltas, uint32_t delta_len, void* userdata) {
+    enum_fmpz_cb_ctx_t* cb_ctx = userdata;
+    if (!_deltas_to_bytes_fmpz(
+            cb_ctx->ctx,
+            cb_ctx->new_hash,
+            cb_ctx->prime,
+            cb_ctx->modulus,
+            cb_ctx->bit_mask,
+            deltas,
+            delta_len,
+            cb_ctx->ret_buf,
+            cb_ctx->state,
+            cb_ctx->next,
+            cb_ctx->byte
+        )) {
+        return false;
+    }
+
+    if (cb_ctx->suffix.length) {
+        fnv_fmpz_with_len_mask(cb_ctx->hash, cb_ctx->suffix, cb_ctx->state, cb_ctx->prime, cb_ctx->bit_mask);
+    } else {
+        fmpz_set(cb_ctx->hash, cb_ctx->state);
+    }
+
+    const bool is_eq = fmpz_equal(cb_ctx->hash, cb_ctx->target);
+    if (!is_eq) {
+        return false;
+    }
+
+    return _handle_candidate(
+        cb_ctx->prefix,
+        (char_buffer){cb_ctx->ret_buf, delta_len},
+        cb_ctx->suffix,
+        &cb_ctx->output.value,
+        cb_ctx->callback,
+        cb_ctx->userdata,
+        &cb_ctx->output.memory_error
+    );
+}
+
+static void _set_fmpz_coeffs(fmpz_mat_t coeffs, const fmpz_t prime, const uint32_t nn) {
+    fmpz_set(fmpz_mat_entry(coeffs, 0, nn - 1), prime);
+    for (uint32_t i = nn - 1; i > 0; --i) {
+        fmpz_mul(fmpz_mat_entry(coeffs, 0, i - 1), fmpz_mat_entry(coeffs, 0, i), prime);
+    }
+}
+
+static CrackResult _crack_fmpz_with_len_enumerate(
     context_t ctx,
     fmpz_t target,
     char_buffer* out_buffer,
     const uint32_t expected_len,
-    const uint32_t brute_len
+    const uint32_t enum_bound,
+    const uint64_t max_enum_candidates,
+    uint32_t threads,
+    crack_candidate_cb callback,
+    void* userdata
 ) {
-    CrackResult prereq_chk = _check_prereqs(ctx, brute_len);
+    CrackResult prereq_chk = _check_prereqs(ctx);
     if (prereq_chk != SUCCESS) {
         return prereq_chk;
     }
 
-    // ctx vars that we access a lot and aren't changed
     const uint32_t bit_len = ctx->bits;
     const fmpz* prime = (fmpz*)ctx->prime_fmpz;
     const fmpz* offset_basis = (fmpz*)ctx->offset_basis_fmpz;
-    const char* prefix = get_prefix(ctx)->data; if (!prefix) prefix = "";
-    const char* suffix = get_suffix(ctx)->data; if (!suffix) suffix = "";
-    char_buffer* brute_chars = get_brute_chars(ctx);
-    
-    fmpz_t MOD; fmpz_init(MOD);
-    fmpz_ui_pow_ui(MOD, 2, bit_len);
+    char_buffer prefix = *get_prefix(ctx);
+    char_buffer suffix = *get_suffix(ctx);
 
-    const size_t prefix_len = get_prefix(ctx)->length;
-    const size_t suffix_len = get_suffix(ctx)->length;
-
-    const uint32_t nn = expected_len - brute_len - prefix_len - suffix_len;
-    const uint32_t dim = nn + 2;
-
-    // const uint64_t bit_mask = bit_len != 64 ? ((uint64_t)1 << bit_len) - 1 : ~(uint64_t)0;
-    // const uint64_t bit_mask = ~(uint64_t)0 >> (64 - bit_len);
-    fmpz_t bit_mask; fmpz_init(bit_mask);
-    fmpz_sub_ui(bit_mask, MOD, (ulong)1);
-
-    fmpz_t P; fmpz_init_set_ui(P, (ulong)1);
-    for (uint32_t i = 0; i < nn; ++i) {
-        fmpz_mul(P, P, prime);
-        fmpz_and(P, P, bit_mask);
-    }
-
-    // using VLA instead of malloc
-    // TODO: allow the user to customize the weights
-    uint64_t Q[dim];
-    _init_weights(Q, dim, 12, 4, 10);
-    
-    // identity matrix but with an extra column on the left and extra row on the bottom
-    fmpz_mat_t _M;
-    fmpz_mat_init(_M, dim, dim);
-    for (uint32_t i = 0; i <= nn; ++i) {
-        fmpz_set_ui(fmpz_mat_entry(_M, i, i+1), (ulong)1);
-    }
-
-    // fill in extra column on the left
-    // (except second to last val)
-    for (uint32_t i = 0; i < nn; ++i) {
-        fmpz_pow_ui(fmpz_mat_entry(_M, i, 0), prime, (ulong)(nn - i));
-    }
-    fmpz_set(fmpz_mat_entry(_M, dim - 1, 0), MOD);
-
-    // M *= Q (part 1)
-    // this should be done on every iteration, but since we only change one element in the M matrix
-    // on each iteration, we can precompute almost everything else
-    for (uint32_t x = 0; x < dim; ++x) {
-        const uint64_t Q_val = Q[x];
-        for (uint32_t y = 0; y < dim; ++y) {
-            fmpz* const data = fmpz_mat_entry(_M, y, x);
-            fmpz_mul_ui(data, data, Q_val);
-        }
-    }
-
-    // perform reverse of fnv algo to get hash without suffix applied
-    fmpz_t ntarget;
-    fmpz_init_set(ntarget, target);
-    if (suffix_len != 0) {
-        fmpz_t inv_prime, cur_char;
-        fmpz_init(inv_prime); fmpz_init(cur_char);
-        inverse_fmpz(inv_prime, prime, bit_len);
-        for (int32_t i = suffix_len - 1; i >= 0; --i) {
-            fmpz_set_ui(cur_char, (ulong)suffix[i]);
-            fmpz_mul(ntarget, ntarget, inv_prime);
-            fmpz_xor(ntarget, ntarget, cur_char);
-            fmpz_and(ntarget, ntarget, bit_mask);
-        }
-        fmpz_clear(inv_prime);
-        fmpz_clear(cur_char);
-    }
-
-    char ret_buf[dim];
-    memset(ret_buf, 0, dim);
-
-    // matrix that will take data from _M
-    fmpz_mat_t M;
-    fmpz_mat_init(M, dim, dim);
-
-    // LLL config used for every iteration
-    fmpz_lll_t fl;
-    fmpz_lll_context_init_default(fl);
-
-    // brute chars
-    brute_chars_t brute;
-    product(&brute, brute_chars->data, brute_chars->length, brute_len);
-
-    // var to store result to return
-    CrackResult result = FAILED;
-
-    // precompute the hash with the prefix applied
-    fmpz_t prefixed_hash;
-    fmpz_init(prefixed_hash);
-    fnv_fmpz_with_len(prefixed_hash, prefix, prefix_len, offset_basis, prime, bit_len);
-
-    // vars used in the loop
-    fmpz_t new_hash, m;
-    fmpz_init(new_hash);
-    fmpz_init(m);
-
-    for (uint32_t i = 0; i < brute.total_entries; ++i) {
-        const char* cur = brute.buffer + i * brute.entry_length;
-
-        // get the hash without the prefix applied
-        fnv_fmpz_with_len(new_hash, cur, brute.entry_length, prefixed_hash, prime, bit_len);
-
-        // const uint64_t m = (new_hash * P - ntarget) & bit_mask;
-        fmpz_mul(m, new_hash, P);
-        fmpz_sub(m, m, ntarget);
-        fmpz_and(m, m, bit_mask);
-
-        // create copy with (0, dim - 2) set
-        fmpz_mat_set(M, _M);
-        fmpz_set(fmpz_mat_entry(M, dim - 2, 0), m);
-
-        // M *= Q (part 2)
-        fmpz_mul_ui(fmpz_mat_entry(M, dim - 2, 0), fmpz_mat_entry(M, dim - 2, 0), Q[0]);
-
-        // M = M.LLL()
-        fmpz_lll_d(M, NULL, fl);
-
-        // M /= Q
-        for (uint32_t x = 0; x < dim; ++x) {
-            const uint64_t Q_val = Q[x];
-            for (uint32_t y = 0; y < dim; ++y) {
-                fmpz* const data = fmpz_mat_entry(M, y, x);
-                fmpz_divexact_ui(data, data, Q_val);
-            }
-        }
-
-        const int32_t idx = _check_resulting_matrix(
-            ctx, M, dim, fmpz_get_ui(new_hash), fmpz_get_ui(prime), ret_buf
-        );
-
-        if (idx >= 0) {
-            // confirm the hash is correct, false positives are possible
-            fmpz_t hash; fmpz_init(hash);
-            fnv_fmpz_with_len(hash, ret_buf, nn, new_hash, prime, bit_len);
-            fnv_fmpz_with_len(hash, suffix, suffix_len, hash, prime, bit_len);
-
-            const bool is_eq = fmpz_equal(hash, target);
-            fmpz_clear(hash);
-
-            if (is_eq) {
-                char* output;
-                size_t output_len;
-                if (!_store_result_safe(
-                    prefix, prefix_len,
-                    cur, brute.entry_length,
-                    ret_buf, nn,
-                    suffix, suffix_len,
-                    &output, &output_len)) {
-                    result = MEMORY_ERROR;
-                    goto cleanup;
-                }
-
-                out_buffer->data = output;
-                out_buffer->length = output_len;
-                result = SUCCESS;
-                goto cleanup;
-            }
-        }
-    }
-
-cleanup:
-    destroy_product(&brute);
-    fmpz_mat_clear(_M);
-    fmpz_mat_clear(M);
-    fmpz_clear(MOD);
-    fmpz_clear(P);
-    fmpz_clear(bit_mask);
-    fmpz_clear(ntarget);
-    return result;
-}
-
-CrackResult crack_u64(
-    context_t ctx,
-    const uint64_t target,
-    char_buffer* out_buffer, 
-    const uint32_t max_search_len,
-    const uint64_t max_crack_len
-) {
-    if (max_search_len == 0) {
+    if (expected_len < prefix.length + suffix.length) {
         return BAD_SEARCH_LENGTH;
     }
 
+    const uint32_t nn = expected_len - prefix.length - suffix.length;
+
+    const uint32_t worker_count = nn ? _worker_count(threads) : 1;
+    const size_t buffer_size = (size_t)nn + 1;
+    if (buffer_size > SIZE_MAX / worker_count) {
+        return MEMORY_ERROR;
+    }
+    char* ret_buf = calloc(buffer_size * worker_count, 1);
+    int64_t* lower_bounds = NULL;
+    int64_t* upper_bounds = NULL;
+    fmpz_mat_t coeffs;
+    fmpz_t MOD, bit_mask, ntarget, new_hash, rhs;
+    fmpz_mat_init(coeffs, 1, nn);
+    fmpz_init(MOD);
+    fmpz_init(bit_mask);
+    fmpz_init(ntarget);
+    fmpz_init(new_hash);
+    fmpz_init(rhs);
+
+    if (!ret_buf) {
+        fmpz_clear(rhs);
+        fmpz_clear(new_hash);
+        fmpz_clear(ntarget);
+        fmpz_clear(bit_mask);
+        fmpz_clear(MOD);
+        fmpz_mat_clear(coeffs);
+        return MEMORY_ERROR;
+    }
+
+    CrackResult result = FAILED;
+    _init_modulus(MOD, bit_len);
+    fmpz_sub_ui(bit_mask, MOD, (ulong)1);
+    _reverse_suffix_fmpz(ntarget, target, suffix, prime, MOD, bit_mask);
+    fnv_fmpz_with_len_mask(new_hash, prefix, offset_basis, prime, bit_mask);
+
+    if (nn != 0) {
+        const ulong low_mod = (ulong)1 << (bit_len < 8 ? bit_len : 8);
+        lower_bounds = malloc((size_t)nn * sizeof(*lower_bounds));
+        upper_bounds = malloc((size_t)nn * sizeof(*upper_bounds));
+        if (!lower_bounds || !upper_bounds) {
+            result = MEMORY_ERROR;
+            goto cleanup;
+        }
+        CrackResult bounds_result = _low_state_delta_bounds(
+            ctx,
+            lower_bounds,
+            upper_bounds,
+            nn,
+            fmpz_fdiv_ui(new_hash, low_mod),
+            fmpz_fdiv_ui(ntarget, low_mod),
+            fmpz_fdiv_ui(prime, low_mod)
+        );
+        if (bounds_result != SUCCESS) {
+            result = bounds_result;
+            goto cleanup;
+        }
+
+        _set_fmpz_coeffs(coeffs, prime, nn);
+    }
+
+    if (fnvcrack_interrupted()) {
+        result = INTERRUPTED;
+        goto cleanup;
+    }
+
+    if (nn == 0) {
+        fnv_fmpz_with_len_mask(rhs, suffix, new_hash, prime, bit_mask);
+        const bool is_eq = fmpz_equal(rhs, target);
+        if (!is_eq) {
+            goto cleanup;
+        }
+
+        bool memory_error = false;
+        if (!_handle_candidate(
+                prefix, (char_buffer){ret_buf, 0}, suffix, out_buffer, callback, userdata, &memory_error
+            )) {
+            goto cleanup;
+        }
+        result = memory_error ? MEMORY_ERROR : SUCCESS;
+        goto cleanup;
+    }
+
+    fmpz_mul(rhs, new_hash, fmpz_mat_entry(coeffs, 0, 0));
+    fmpz_sub(rhs, ntarget, rhs);
+    fmpz_mod(rhs, rhs, MOD);
+
+    enum_fmpz_cb_ctx_t cb_ctx = {
+        .ctx = ctx,
+        .target = target,
+        .new_hash = new_hash,
+        .prime = prime,
+        .modulus = MOD,
+        .bit_mask = bit_mask,
+        .prefix = prefix,
+        .suffix = suffix,
+        .callback = callback,
+        .userdata = userdata,
+        .ret_buf = ret_buf,
+    };
+    enum_fmpz_cb_ctx_t* workers = worker_count > 1 ? calloc(worker_count, sizeof(*workers)) : &cb_ctx;
+    if (!workers) {
+        result = MEMORY_ERROR;
+        goto cleanup;
+    }
+    for (uint32_t i = 0; i < worker_count; ++i) {
+        workers[i] = cb_ctx;
+        workers[i].ret_buf = ret_buf + i * buffer_size;
+        fmpz_init(workers[i].hash);
+        fmpz_init(workers[i].state);
+        fmpz_init(workers[i].next);
+        fmpz_init(workers[i].byte);
+    }
+    enumerate_solver_result enum_result;
+    if (threads > 1) {
+        enum_result = enumerate_bounded_mod_parallel(
+            coeffs,
+            rhs,
+            MOD,
+            lower_bounds,
+            upper_bounds,
+            enum_bound,
+            max_enum_candidates,
+            threads,
+            _enum_fmpz_candidate,
+            workers,
+            sizeof(*workers)
+        );
+    } else {
+        enum_result = enumerate_bounded_mod(
+            coeffs, rhs, MOD, lower_bounds, upper_bounds, enum_bound, max_enum_candidates, _enum_fmpz_candidate, workers
+        );
+    }
+    result = _collect_outputs(
+        workers,
+        sizeof(*workers),
+        worker_count,
+        threads > 1 ? enumerate_parallel_winning_worker() : 0,
+        enum_result,
+        out_buffer
+    );
+    for (uint32_t i = 0; i < worker_count; ++i) {
+        fmpz_clear(workers[i].byte);
+        fmpz_clear(workers[i].next);
+        fmpz_clear(workers[i].state);
+        fmpz_clear(workers[i].hash);
+    }
+    if (worker_count > 1) {
+        free(workers);
+    }
+
+cleanup:
+    free(upper_bounds);
+    free(lower_bounds);
+    free(ret_buf);
+    fmpz_clear(rhs);
+    fmpz_clear(new_hash);
+    fmpz_clear(ntarget);
+    fmpz_clear(bit_mask);
+    fmpz_clear(MOD);
+    fmpz_mat_clear(coeffs);
+    return result;
+}
+
+CrackResult crack_u64_with_len_callback_limits(
+    context_t ctx,
+    uint64_t target,
+    char_buffer* out_buffer,
+    const uint32_t expected_len,
+    const uint32_t enum_bound,
+    const uint64_t max_enum_candidates,
+    crack_candidate_cb callback,
+    void* userdata
+) {
+    return _crack_u64_with_len_enumerate(
+        ctx, target, out_buffer, expected_len, enum_bound, max_enum_candidates, 1, callback, userdata
+    );
+}
+
+CrackResult crack_fmpz_with_len_callback_limits(
+    context_t ctx,
+    fmpz_t target,
+    char_buffer* out_buffer,
+    const uint32_t expected_len,
+    const uint32_t enum_bound,
+    const uint64_t max_enum_candidates,
+    crack_candidate_cb callback,
+    void* userdata
+) {
+    return _crack_fmpz_with_len_enumerate(
+        ctx, target, out_buffer, expected_len, enum_bound, max_enum_candidates, 1, callback, userdata
+    );
+}
+
+CrackResult crack_u64_with_len_callback_limits_threads(
+    context_t ctx,
+    uint64_t target,
+    char_buffer* out_buffer,
+    uint32_t expected_len,
+    uint32_t enum_bound,
+    uint64_t max_enum_candidates,
+    uint32_t threads,
+    crack_candidate_cb callback,
+    void* userdata
+) {
+    return _crack_u64_with_len_enumerate(
+        ctx, target, out_buffer, expected_len, enum_bound, max_enum_candidates, threads, callback, userdata
+    );
+}
+
+CrackResult crack_fmpz_with_len_callback_limits_threads(
+    context_t ctx,
+    fmpz_t target,
+    char_buffer* out_buffer,
+    uint32_t expected_len,
+    uint32_t enum_bound,
+    uint64_t max_enum_candidates,
+    uint32_t threads,
+    crack_candidate_cb callback,
+    void* userdata
+) {
+    return _crack_fmpz_with_len_enumerate(
+        ctx, target, out_buffer, expected_len, enum_bound, max_enum_candidates, threads, callback, userdata
+    );
+}
+
+CrackResult crack_u64_with_len_limits(
+    context_t ctx,
+    uint64_t target,
+    char_buffer* out_buffer,
+    const uint32_t expected_len,
+    const uint32_t enum_bound,
+    const uint64_t max_enum_candidates
+) {
+    return crack_u64_with_len_callback_limits(
+        ctx, target, out_buffer, expected_len, enum_bound, max_enum_candidates, NULL, NULL
+    );
+}
+
+CrackResult crack_fmpz_with_len_limits(
+    context_t ctx,
+    fmpz_t target,
+    char_buffer* out_buffer,
+    const uint32_t expected_len,
+    const uint32_t enum_bound,
+    const uint64_t max_enum_candidates
+) {
+    return crack_fmpz_with_len_callback_limits(
+        ctx, target, out_buffer, expected_len, enum_bound, max_enum_candidates, NULL, NULL
+    );
+}
+
+CrackResult crack_u64_with_len(context_t ctx, uint64_t target, char_buffer* out_buffer, const uint32_t expected_len) {
+    return crack_u64_with_len_limits(
+        ctx, target, out_buffer, expected_len, CRACK_DEFAULT_ENUM_BOUND, CRACK_DEFAULT_MAX_ENUM_CANDIDATES
+    );
+}
+
+CrackResult crack_fmpz_with_len(context_t ctx, fmpz_t target, char_buffer* out_buffer, const uint32_t expected_len) {
+    return crack_fmpz_with_len_limits(
+        ctx, target, out_buffer, expected_len, CRACK_DEFAULT_ENUM_BOUND, CRACK_DEFAULT_MAX_ENUM_CANDIDATES
+    );
+}
+
+CrackResult crack_u64_callback_limits(
+    context_t ctx,
+    const uint64_t target,
+    char_buffer* out_buffer,
+    const uint32_t max_search_len,
+    const uint32_t enum_bound,
+    const uint64_t max_enum_candidates,
+    crack_candidate_cb callback,
+    void* userdata
+) {
     const uint32_t known_len = get_prefix(ctx)->length + get_suffix(ctx)->length;
+    if (max_search_len == 0 && known_len == 0) {
+        return BAD_SEARCH_LENGTH;
+    }
+
+    if (max_search_len == 0) {
+        return crack_u64_with_len_callback_limits(
+            ctx, target, out_buffer, known_len, enum_bound, max_enum_candidates, callback, userdata
+        );
+    }
+
     for (uint32_t n = 1 + known_len; n <= max_search_len + known_len; ++n) {
-        const uint32_t brute_len = n <= max_crack_len + known_len ? 0 : n - known_len - max_crack_len;
-        CrackResult ret = crack_u64_with_len(ctx, target, out_buffer, n, brute_len);
-        if (ret == -1)
+        if (fnvcrack_interrupted()) {
+            return INTERRUPTED;
+        }
+
+        CrackResult ret = crack_u64_with_len_callback_limits(
+            ctx, target, out_buffer, n, enum_bound, max_enum_candidates, callback, userdata
+        );
+        if (ret == FAILED)
             continue;
 
-        return ret; // can be an error
+        return ret;
     }
 
     return FAILED;
 }
 
-CrackResult crack_fmpz(
+CrackResult crack_u64_limits(
+    context_t ctx,
+    const uint64_t target,
+    char_buffer* out_buffer,
+    const uint32_t max_search_len,
+    const uint32_t enum_bound,
+    const uint64_t max_enum_candidates
+) {
+    return crack_u64_callback_limits(
+        ctx, target, out_buffer, max_search_len, enum_bound, max_enum_candidates, NULL, NULL
+    );
+}
+
+CrackResult crack_fmpz_callback_limits(
     context_t ctx,
     fmpz_t target,
     char_buffer* out_buffer,
     const uint32_t max_search_len,
-    const uint64_t max_crack_len
+    const uint32_t enum_bound,
+    const uint64_t max_enum_candidates,
+    crack_candidate_cb callback,
+    void* userdata
 ) {
-    if (max_search_len == 0) {
+    const uint32_t known_len = get_prefix(ctx)->length + get_suffix(ctx)->length;
+    if (max_search_len == 0 && known_len == 0) {
         return BAD_SEARCH_LENGTH;
     }
 
-    const uint32_t known_len = get_prefix(ctx)->length + get_suffix(ctx)->length;
+    if (max_search_len == 0) {
+        return crack_fmpz_with_len_callback_limits(
+            ctx, target, out_buffer, known_len, enum_bound, max_enum_candidates, callback, userdata
+        );
+    }
+
     for (uint32_t n = 1 + known_len; n <= max_search_len + known_len; ++n) {
-        const uint32_t brute_len = n <= max_crack_len + known_len ? 0 : n - known_len - max_crack_len;
-        CrackResult ret = crack_fmpz_with_len(ctx, target, out_buffer, n, brute_len);
-        if (ret == -1)
+        if (fnvcrack_interrupted()) {
+            return INTERRUPTED;
+        }
+
+        CrackResult ret = crack_fmpz_with_len_callback_limits(
+            ctx, target, out_buffer, n, enum_bound, max_enum_candidates, callback, userdata
+        );
+        if (ret == FAILED)
             continue;
 
-        return ret; // can be an error
+        return ret;
     }
 
     return FAILED;
+}
+
+CrackResult crack_fmpz_limits(
+    context_t ctx,
+    fmpz_t target,
+    char_buffer* out_buffer,
+    const uint32_t max_search_len,
+    const uint32_t enum_bound,
+    const uint64_t max_enum_candidates
+) {
+    return crack_fmpz_callback_limits(
+        ctx, target, out_buffer, max_search_len, enum_bound, max_enum_candidates, NULL, NULL
+    );
+}
+
+CrackResult crack_u64(context_t ctx, const uint64_t target, char_buffer* out_buffer, const uint32_t max_search_len) {
+    return crack_u64_limits(
+        ctx, target, out_buffer, max_search_len, CRACK_DEFAULT_ENUM_BOUND, CRACK_DEFAULT_MAX_ENUM_CANDIDATES
+    );
+}
+
+CrackResult crack_fmpz(context_t ctx, fmpz_t target, char_buffer* out_buffer, const uint32_t max_search_len) {
+    return crack_fmpz_limits(
+        ctx, target, out_buffer, max_search_len, CRACK_DEFAULT_ENUM_BOUND, CRACK_DEFAULT_MAX_ENUM_CANDIDATES
+    );
 }

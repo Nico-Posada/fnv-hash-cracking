@@ -1,0 +1,65 @@
+[build-system]
+requires = ["setuptools>=69", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "fnvcrack"
+version = "3.0.0"
+description = "A high-performance FNV hash cracking library"
+readme = "python/README.md"
+requires-python = ">=3.11"
+
+[dependency-groups]
+benchmark = ["exrex", "py-spy"]
+dev = ["exrex", "pytest", "pytest-cov"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = ["test_*.py"]
+python_classes = ["*TestCase"]
+addopts = [
+    "-ra",
+    "--cov=fnvcrack",
+    "--cov-report=term-missing",
+    "--cov-fail-under=100",
+]
+
+[tool.bumpversion]
+parse = "(?P<major>\\d+)\\.(?P<minor>\\d+)\\.(?P<patch>\\d+)"
+serialize = ["{major}.{minor}.{patch}"]
+
+[[tool.bumpversion.files]]
+filename = "python/fnvcrack.c"
+search = '#define FNVCRACK_VERSION "{current_version}"'
+replace = '#define FNVCRACK_VERSION "{new_version}"'
+
+[[tool.bumpversion.files]]
+filename = "uv.lock"
+search = '''name = "fnvcrack"
+version = "{current_version}"'''
+replace = '''name = "fnvcrack"
+version = "{new_version}"'''
+
+[tool.cibuildwheel]
+build = "cp{311,312,313,314}-{manylinux_x86_64,macosx_x86_64,macosx_arm64,win_amd64}"
+build-frontend = "build[uv]"
+test-requires = ["exrex", "pytest", "pytest-cov"]
+test-command = "python -m pytest {project}/tests"
+
+[tool.cibuildwheel.windows]
+archs = ["AMD64"]
+repair-wheel-command = 'delvewheel repair --add-path "%FNVCRACK_DEPS%/bin" -w {dest_dir} {wheel}'
+
+[tool.cibuildwheel.macos]
+before-all = "brew install flint pkgconf"
+
+[tool.cibuildwheel.linux]
+archs = ["x86_64"]
+manylinux-x86_64-image = "manylinux_2_28"
+repair-wheel-command = "auditwheel repair --strip --plat manylinux_2_28_x86_64 --lib-sdir .libs -w {dest_dir} {wheel}"
+test-environment = { LD_LIBRARY_PATH = "" }
+
+[tool.cibuildwheel.linux.environment]
+FNVCRACK_DEPS = "/opt/fnvcrack-deps"
+LD_LIBRARY_PATH = "/opt/fnvcrack-deps/lib"
+PKG_CONFIG_PATH = "/opt/fnvcrack-deps/lib/pkgconfig"

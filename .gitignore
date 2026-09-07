@@ -1,10 +1,24 @@
 .vscode/
 __pycache__/
 build/
+dist/
+wheelhouse*/
 ext/
+.pytest_cache/
+.coverage
+.venv/
 *.o
+*.so
+*.gcda
+*.gcno
+*.gcov
+.codex/
+AGENTS.md
+.mypy_cache/
+.clangd
 
 # Nonstandard stuff I have for testing
-fnvcrack.egg-info/
+*.egg-info/
 .gdb_history
 dbg_path.txt
+/benchmarking/*/
