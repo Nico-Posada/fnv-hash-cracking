@@ -96,9 +96,12 @@ result = ctx.crack(target_hash, crack_len=8, threads=4)
 ```
 
 The default is `threads=1`. The value is a maximum worker count for one shared
-lattice enumeration per exact search length. Short searches can be slower due
-to worker and scheduling overhead. Callback calls are fully serialized and
-candidate order is unspecified.
+lattice enumeration per exact search length. Callbacks work as normal but order
+is unspecified.
+
+> [!NOTE]
+> Use this for longer searches. Short searches (<10 chars) may be slower due
+> to worker and scheduling overhead.
 
 #### Enumeration Limits
 
@@ -114,25 +117,26 @@ result = ctx.crack(
 )
 ```
 
+The default `enum_bound` is 4 as in my testing that seems to be the best middle
+ground for success rates and speed.
+
 #### Inspecting Multiple Matches
 
 By default, `crack()` stops at the first verified match. Pass a callback to
 inspect each complete verified candidate as `bytes`. A truthy return accepts
-that candidate and stops; a falsey return rejects it and continues:
+that candidate and stops while a falsey return rejects it and continues:
 
 ```python
 matches = []
 
-def accept(candidate):
+def accept(candidate: bytes) -> bool:
     matches.append(candidate)
     return len(matches) == 10
 
 result = ctx.crack(target_hash, crack_len=8, callback=accept)
 ```
 
-Returning false every time runs until the bounded search is exhausted. The
-result is then `CrackResult(FAILED, None)` even though `matches` contains every
-candidate offered to the callback.
+Returning false every time runs until the bounded search is exhausted.
 
 #### Batch Cracking
 
@@ -153,33 +157,6 @@ if __name__ == "__main__":
 
 The `if __name__ == "__main__"` guard is required on platforms that use
 spawn-based multiprocessing.
-
-## Python API Overview
-
-### Context
-
-```python
-CrackContext(
-    offset_basis=0xCBF29CE484222325,
-    prime=0x100000001B3,
-    bit_length=64,
-    valid_chars=None,
-    prefix=b"",
-    suffix=b"",
-)
-```
-
-Python integers are accepted for custom offset bases, primes, targets, and
-arbitrary-precision hashes.
-
-### Results
-
-`CrackContext.crack()` returns a `CrackResult` with:
-
-- `status`: A `CrackStatus` value
-- `value`: The matching bytes, or `None`
-- `ok`: `True` when the crack succeeded
-- `status_name`: The status as a string
 
 ## C Usage
 
@@ -223,22 +200,6 @@ int main(void) {
     return status == SUCCESS ? 0 : 1;
 }
 ```
-
-## How It Works
-
-This tool folds known prefixes and suffixes into the FNV-1a state, builds a
-lattice for the unknown bytes, reduces the basis with FLINT, and runs bounded
-enumeration around the solver guess. Candidate bytes are constrained by
-`valid_chars`, and every returned result is verified against the target hash.
-
-Low-byte reachability tightens the delta bounds before enumeration. Stable
-reachability layers are reused, and transition scans start from the smaller
-reachable state set. These shortcuts preserve the same bounds and candidate
-verification.
-
-This is a constrained search rather than a guarantee that every preimage will
-be found. Wider character sets, longer unknown inputs, and larger enumeration
-bounds increase the work substantially.
 
 ## Development
 
