@@ -21,4 +21,4 @@ AGENTS.md
 *.egg-info/
 .gdb_history
 dbg_path.txt
-benchmarking/results/
+/benchmarking/*/
