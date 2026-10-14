@@ -109,7 +109,7 @@ jobs:
           output-dir: wheelhouse
 
       - name: Upload wheel artifacts
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: fnvcrack-manylinux-wheels
           path: wheelhouse/*.whl
@@ -144,7 +144,7 @@ jobs:
           output-dir: wheelhouse
 
       - name: Upload wheel artifacts
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: fnvcrack-windows-amd64-wheels
           path: wheelhouse/*.whl
@@ -183,7 +183,7 @@ jobs:
           output-dir: wheelhouse
 
       - name: Upload wheel artifacts
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: fnvcrack-macos-${{ matrix.arch }}-wheels
           path: wheelhouse/*.whl
@@ -216,7 +216,7 @@ jobs:
         run: uv build --sdist --out-dir dist --no-sources
 
       - name: Upload source artifact
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: fnvcrack-sdist
           path: dist/*.tar.gz
